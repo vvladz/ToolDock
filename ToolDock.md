@@ -381,7 +381,7 @@ The laptop polls GitHub periodically.
 Example:
 
 ```text
-https://raw.githubusercontent.com/<owner>/<repo>/main/tools.json
+https://raw.githubusercontent.com/<owner>/<repo>/master/tools.json
 ```
 
 The catalog answers:

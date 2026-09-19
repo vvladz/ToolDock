@@ -21,17 +21,17 @@ Releases are self-contained, so a separate .NET installation is not required.
 Replace `OWNER/ToolDock` with the repository in which ToolDock is published:
 
 ```powershell
-& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/OWNER/ToolDock/main/install.ps1'))) -Repository 'OWNER/ToolDock'
+& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/OWNER/ToolDock/master/install.ps1'))) -Repository 'OWNER/ToolDock'
 ```
 
 To inspect the remote script before running it, download it first:
 
 ```powershell
-Invoke-WebRequest 'https://raw.githubusercontent.com/OWNER/ToolDock/main/install.ps1' -OutFile install.ps1
+Invoke-WebRequest 'https://raw.githubusercontent.com/OWNER/ToolDock/master/install.ps1' -OutFile install.ps1
 .\install.ps1 -Repository 'OWNER/ToolDock'
 ```
 
-By default, ToolDock loads the catalog from `https://raw.githubusercontent.com/OWNER/ToolDock/main/tools.json`. To use another URL, specify it explicitly:
+By default, ToolDock loads the catalog from `https://raw.githubusercontent.com/OWNER/ToolDock/master/tools.json`. To use another URL, specify it explicitly:
 
 ```powershell
 .\install.ps1 -Repository 'OWNER/ToolDock' -CatalogUrl 'https://example.org/tools.json'

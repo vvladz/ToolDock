@@ -24,7 +24,7 @@ if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
 }
 
 if ([string]::IsNullOrWhiteSpace($CatalogUrl)) {
-    $CatalogUrl = "https://raw.githubusercontent.com/$Repository/main/tools.json"
+    $CatalogUrl = "https://raw.githubusercontent.com/$Repository/master/tools.json"
 }
 
 $installPath = [IO.Path]::GetFullPath($InstallRoot)
