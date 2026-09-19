@@ -1,0 +1,19 @@
+{
+  "tools": {
+    "farshell": {
+      "repo": "owner/farshell",
+      "asset": "farshell-win-x64.zip",
+      "enabled": true,
+      "autostart": true,
+      "restart": true
+    },
+    "devproxy": {
+      "repo": "owner/devproxy",
+      "asset": "devproxy-win-x64.zip",
+      "executable": "app/devproxy.exe",
+      "enabled": true,
+      "autostart": false,
+      "restart": false
+    }
+  }
+}

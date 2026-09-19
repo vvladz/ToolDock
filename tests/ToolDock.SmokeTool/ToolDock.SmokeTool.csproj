@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>smoke-tool</AssemblyName>
+    <RootNamespace>ToolDock.SmokeTool</RootNamespace>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>updater</AssemblyName>
+    <RootNamespace>ToolDock.Updater</RootNamespace>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ToolDock.Common\ToolDock.Common.csproj" />
+  </ItemGroup>
+</Project>

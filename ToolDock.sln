@@ -1,0 +1,36 @@
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.Common", "src\ToolDock.Common\ToolDock.Common.csproj", "{BE2EA790-A52B-4B6A-B506-85983A54BB52}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.Starter", "src\ToolDock.Starter\ToolDock.Starter.csproj", "{47CBB5A4-C670-4515-96E6-41947A9B8E02}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.Updater", "src\ToolDock.Updater\ToolDock.Updater.csproj", "{023962B4-F8A7-4DB4-A786-D7702F842A2B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.SmokeTool", "tests\ToolDock.SmokeTool\ToolDock.SmokeTool.csproj", "{11D8182E-AF95-4244-91A4-BF45951C0DCE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BE2EA790-A52B-4B6A-B506-85983A54BB52}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BE2EA790-A52B-4B6A-B506-85983A54BB52}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BE2EA790-A52B-4B6A-B506-85983A54BB52}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BE2EA790-A52B-4B6A-B506-85983A54BB52}.Release|Any CPU.Build.0 = Release|Any CPU
+		{47CBB5A4-C670-4515-96E6-41947A9B8E02}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{47CBB5A4-C670-4515-96E6-41947A9B8E02}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{47CBB5A4-C670-4515-96E6-41947A9B8E02}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{47CBB5A4-C670-4515-96E6-41947A9B8E02}.Release|Any CPU.Build.0 = Release|Any CPU
+		{023962B4-F8A7-4DB4-A786-D7702F842A2B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{023962B4-F8A7-4DB4-A786-D7702F842A2B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{023962B4-F8A7-4DB4-A786-D7702F842A2B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{023962B4-F8A7-4DB4-A786-D7702F842A2B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{11D8182E-AF95-4244-91A4-BF45951C0DCE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{11D8182E-AF95-4244-91A4-BF45951C0DCE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{11D8182E-AF95-4244-91A4-BF45951C0DCE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{11D8182E-AF95-4244-91A4-BF45951C0DCE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
