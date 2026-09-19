@@ -11,31 +11,32 @@ ToolDock works without administrator privileges, inbound connections, SSH, or Wi
 
 - Windows 10/11 x64;
 - public GitHub Releases for ToolDock and its managed tools;
+- [.NET 10 Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/10.0);
 - PowerShell 5.1 or newer;
 - an interactive sign-in for the current user.
 
-Releases are self-contained, so a separate .NET installation is not required.
-
 ## Installation
 
-Replace `OWNER/ToolDock` with the repository in which ToolDock is published:
+Install the latest ToolDock release with:
 
 ```powershell
-& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/OWNER/ToolDock/master/install.ps1'))) -Repository 'OWNER/ToolDock'
+irm 'https://raw.githubusercontent.com/vvladz/ToolDock/master/install.ps1' | iex
 ```
 
 To inspect the remote script before running it, download it first:
 
 ```powershell
-Invoke-WebRequest 'https://raw.githubusercontent.com/OWNER/ToolDock/master/install.ps1' -OutFile install.ps1
-.\install.ps1 -Repository 'OWNER/ToolDock'
+Invoke-WebRequest 'https://raw.githubusercontent.com/vvladz/ToolDock/master/install.ps1' -OutFile install.ps1
+.\install.ps1
 ```
 
-By default, ToolDock loads the catalog from `https://raw.githubusercontent.com/OWNER/ToolDock/master/tools.json`. To use another URL, specify it explicitly:
+By default, ToolDock loads the catalog from `https://raw.githubusercontent.com/vvladz/ToolDock/master/tools.json`. To use another URL, specify it explicitly:
 
 ```powershell
-.\install.ps1 -Repository 'OWNER/ToolDock' -CatalogUrl 'https://example.org/tools.json'
+.\install.ps1 -CatalogUrl 'https://example.org/tools.json'
 ```
+
+Use `-Repository owner/repository` when installing a fork whose releases and default catalog should be used instead.
 
 The installer:
 
@@ -135,7 +136,7 @@ Local builds require the .NET 10 SDK:
 dotnet build ToolDock.sln -c Release
 ```
 
-The `.github/workflows/build-release.yml` workflow builds the solution on Windows. A `v*` tag also publishes `ToolDock-win-x64.zip` and its SHA-256 checksum to a GitHub Release.
+The `.github/workflows/build-release.yml` workflow builds the solution on Windows. A `v*` tag also publishes the framework-dependent `ToolDock-win-x64.zip` package and its SHA-256 checksum to a GitHub Release.
 
 CI exercises a real `autostart → stdout/stderr → stop` cycle and verifies that closing the Job Object terminates both the root and child processes.
 

@@ -33,8 +33,8 @@ jobs:
       - name: Publish Windows executables
         shell: pwsh
         run: |
-          dotnet publish src/ToolDock.Starter/ToolDock.Starter.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:PublishTrimmed=false -p:DebugType=None -o artifacts/starter
-          dotnet publish src/ToolDock.Updater/ToolDock.Updater.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:PublishTrimmed=false -p:DebugType=None -o artifacts/updater
+          dotnet publish src/ToolDock.Starter/ToolDock.Starter.csproj -c Release -r win-x64 --self-contained false --no-restore -p:DebugType=None -o artifacts/starter
+          dotnet publish src/ToolDock.Updater/ToolDock.Updater.csproj -c Release -r win-x64 --self-contained false --no-restore -p:DebugType=None -o artifacts/updater
           dotnet publish tests/ToolDock.SmokeTool/ToolDock.SmokeTool.csproj -c Release --no-restore -o artifacts/smoke-tool
 
       - name: Test process supervision
@@ -45,9 +45,11 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path artifacts/package/bin -Force | Out-Null
-          Copy-Item artifacts/starter/starter.exe artifacts/package/bin/starter.exe
-          Copy-Item artifacts/updater/updater.exe artifacts/package/bin/updater.exe
+          Copy-Item artifacts/starter/* artifacts/package/bin -Exclude *.pdb -Force
+          Copy-Item artifacts/updater/* artifacts/package/bin -Exclude *.pdb -Force
           Compress-Archive -Path artifacts/package/* -DestinationPath artifacts/ToolDock-win-x64.zip
+          $archiveSize = (Get-Item artifacts/ToolDock-win-x64.zip).Length
+          if ($archiveSize -gt 5MB) { throw "Framework-dependent release is unexpectedly large: $archiveSize bytes" }
           $hash = (Get-FileHash artifacts/ToolDock-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  ToolDock-win-x64.zip" | Set-Content artifacts/ToolDock-win-x64.zip.sha256 -Encoding ascii
 

@@ -1,8 +1,7 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
     [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')]
-    [string] $Repository,
+    [string] $Repository = 'vvladz/ToolDock',
 
     [ValidateNotNullOrEmpty()]
     [string] $CatalogUrl,
@@ -21,6 +20,16 @@ $ErrorActionPreference = 'Stop'
 
 if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
     throw 'ToolDock can only be installed on Windows.'
+}
+
+$dotnet = Get-Command 'dotnet' -ErrorAction SilentlyContinue
+if ($null -eq $dotnet) {
+    throw 'ToolDock requires the .NET 10 Runtime (x64): https://dotnet.microsoft.com/download/dotnet/10.0'
+}
+
+$installedRuntimes = @(& $dotnet.Source --list-runtimes 2>$null)
+if ($LASTEXITCODE -ne 0 -or -not ($installedRuntimes -match '^Microsoft\.NETCore\.App 10\.')) {
+    throw 'ToolDock requires the .NET 10 Runtime (x64): https://dotnet.microsoft.com/download/dotnet/10.0'
 }
 
 if ([string]::IsNullOrWhiteSpace($CatalogUrl)) {
