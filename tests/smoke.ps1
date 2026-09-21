@@ -4,6 +4,9 @@ param(
     [string] $StarterPath,
 
     [Parameter(Mandatory = $true)]
+    [string] $ClientPath,
+
+    [Parameter(Mandatory = $true)]
     [string] $ToolDirectory
 )
 
@@ -11,13 +14,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $starter = [IO.Path]::GetFullPath($StarterPath)
+$client = [IO.Path]::GetFullPath($ClientPath)
 $toolSource = [IO.Path]::GetFullPath($ToolDirectory)
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("ToolDock-smoke-" + [Guid]::NewGuid().ToString('N'))
 $versionRoot = Join-Path $testRoot 'tools\smoke\v1'
 $stateRoot = Join-Path $testRoot 'state'
 $logPath = Join-Path $testRoot 'logs\smoke.log'
 $previousHome = $env:TOOLDOCK_HOME
-$previousNoConsole = $env:TOOLDOCK_NO_CONSOLE
 $starterProcess = $null
 
 function Write-Utf8Json([string] $Path, [object] $Value) {
@@ -28,7 +31,7 @@ function Write-Utf8Json([string] $Path, [object] $Value) {
 function Invoke-Starter([string] $Command) {
     $pipe = [IO.Pipes.NamedPipeClientStream]::new(
         '.',
-        'tool-starter',
+        'ToolDock.Starter.v1',
         [IO.Pipes.PipeDirection]::InOut)
     try {
         $pipe.Connect(5000)
@@ -50,6 +53,15 @@ function Invoke-Starter([string] $Command) {
     }
 }
 
+function Invoke-Client([string] $Command) {
+    $arguments = @($Command -split ' ')
+    $output = @(& $client $arguments 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw ($output -join [Environment]::NewLine)
+    }
+    return ($output -join [Environment]::NewLine)
+}
+
 try {
     New-Item -ItemType Directory -Path $versionRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
@@ -65,6 +77,7 @@ try {
                 daemons = [ordered]@{
                     smoke = [ordered]@{
                         executable = 'smoke-tool.exe'
+                        arguments = @('--daemon', 'value with space', 'quote"here')
                         autostart = $true
                         restartOnUpdate = $true
                     }
@@ -77,22 +90,21 @@ try {
             smoke = [ordered]@{
                 version = 'v1'
                 root = 'tools\smoke\v1'
+                entryPointsTracked = $true
                 commands = @()
             }
         }
     })
 
     $env:TOOLDOCK_HOME = $testRoot
-    $env:TOOLDOCK_NO_CONSOLE = '1'
     $starterProcess = Start-Process -FilePath $starter -PassThru
-    $env:TOOLDOCK_NO_CONSOLE = $previousNoConsole
 
     $status = $null
     $lastConnectError = $null
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     while ([DateTime]::UtcNow -lt $deadline) {
         try {
-            $status = Invoke-Starter 'status smoke'
+            $status = Invoke-Client 'status smoke'
             if ($status -like 'OK running pid=*') { break }
         }
         catch {
@@ -103,8 +115,11 @@ try {
     if ($status -notlike 'OK running pid=*') {
         throw "Autostart failed: $status; pipe error: $lastConnectError"
     }
-    if ((Invoke-Starter 'list') -ne 'OK smoke') {
+    if ((Invoke-Client 'list') -ne 'OK smoke') {
         throw 'Tool list did not include the configured tool.'
+    }
+    if ((Invoke-Client 'logs starter --lines 1') -notmatch 'Pipe server started') {
+        throw 'Client could not read the live starter log.'
     }
 
     $rootPid = [int]($status -replace '^OK running pid=', '')
@@ -126,6 +141,9 @@ try {
     if (-not (Select-String -LiteralPath $logPath -SimpleMatch 'ERR stderr ready' -Quiet)) {
         throw 'Managed stderr was not captured.'
     }
+    if (-not (Select-String -LiteralPath $logPath -SimpleMatch 'OUT args=--daemon|value with space|quote"here' -Quiet)) {
+        throw 'Managed daemon arguments were not preserved.'
+    }
 
     $reconcile = Invoke-Starter 'package-updated smoke updated'
     if ($reconcile -ne 'OK restarted=smoke') {
@@ -135,7 +153,7 @@ try {
         throw 'Package update did not terminate the previous process tree.'
     }
 
-    $status = Invoke-Starter 'status smoke'
+    $status = Invoke-Client 'status smoke'
     if ($status -notlike 'OK running pid=*') {
         throw "Restarted daemon is not running: $status"
     }
@@ -155,14 +173,14 @@ try {
     }
     $childPid = $restartedChildPid
 
-    $stop = Invoke-Starter 'stop smoke'
+    $stop = Invoke-Client 'stop smoke'
     if ($stop -ne 'OK stopped') {
         throw "Stop failed: $stop"
     }
     if (Get-Process -Id $rootPid, $childPid -ErrorAction SilentlyContinue) {
         throw 'Closing the Job Object did not terminate the complete process tree.'
     }
-    if ((Invoke-Starter 'status smoke') -ne 'OK stopped') {
+    if ((Invoke-Client 'status smoke') -ne 'OK stopped') {
         throw 'Stopped status was not reported.'
     }
 
@@ -182,7 +200,6 @@ finally {
         $starterProcess.WaitForExit(5000) | Out-Null
     }
     $env:TOOLDOCK_HOME = $previousHome
-    $env:TOOLDOCK_NO_CONSOLE = $previousNoConsole
     if (Test-Path -LiteralPath $testRoot) {
         Remove-Item -LiteralPath $testRoot -Recurse -Force
     }

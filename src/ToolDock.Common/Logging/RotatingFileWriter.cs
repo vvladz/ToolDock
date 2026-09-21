@@ -55,7 +55,11 @@ public sealed class RotatingFileWriter : IDisposable
     }
 
     private StreamWriter OpenWriter()
-        => new(new FileStream(_path, FileMode.Append, FileAccess.Write, FileShare.Read), new UTF8Encoding(false))
+        => new(new FileStream(
+            _path,
+            FileMode.Append,
+            FileAccess.Write,
+            FileShare.Read | FileShare.Delete), new UTF8Encoding(false))
         {
             AutoFlush = true
         };

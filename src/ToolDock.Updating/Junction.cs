@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace ToolDock.Updater;
+namespace ToolDock.Updating;
 
 internal static class Junction
 {

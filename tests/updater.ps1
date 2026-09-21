@@ -10,7 +10,6 @@ $ErrorActionPreference = 'Stop'
 $updater = (Resolve-Path -LiteralPath $UpdaterPath).Path
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("ToolDock-updater-test-" + [Guid]::NewGuid().ToString('N'))
 $previousHome = $env:TOOLDOCK_HOME
-$previousNoConsole = $env:TOOLDOCK_NO_CONSOLE
 
 try {
     New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
@@ -21,7 +20,6 @@ try {
         [Text.UTF8Encoding]::new($false))
 
     $env:TOOLDOCK_HOME = $testRoot
-    $env:TOOLDOCK_NO_CONSOLE = '1'
     $process = Start-Process -FilePath $updater -Wait -PassThru
     $exitCode = $process.ExitCode
     if ($exitCode -ne 1) {
@@ -36,11 +34,25 @@ try {
         throw 'Updater released its mutex from a different thread.'
     }
 
-    'updater async mutex cleanup: OK'
+    $mutex = [Threading.Mutex]::new($false, 'Local\ToolDock.Update')
+    try {
+        if (-not $mutex.WaitOne(0)) {
+            throw 'Test could not acquire the update mutex.'
+        }
+        $blocked = Start-Process -FilePath $updater -Wait -PassThru
+        if ($blocked.ExitCode -ne 0) {
+            throw "Updater returned $($blocked.ExitCode) while another update owned the mutex."
+        }
+    }
+    finally {
+        try { $mutex.ReleaseMutex() } catch { }
+        $mutex.Dispose()
+    }
+
+    'updater mutex coordination: OK'
 }
 finally {
     $env:TOOLDOCK_HOME = $previousHome
-    $env:TOOLDOCK_NO_CONSOLE = $previousNoConsole
     if (Test-Path -LiteralPath $testRoot) {
         Remove-Item -LiteralPath $testRoot -Recurse -Force
     }

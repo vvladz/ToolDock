@@ -8,6 +8,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.Starter", "src\Too
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.Updater", "src\ToolDock.Updater\ToolDock.Updater.csproj", "{023962B4-F8A7-4DB4-A786-D7702F842A2B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.Updating", "src\ToolDock.Updating\ToolDock.Updating.csproj", "{B2F91B66-E8F5-4382-9CB2-68816D39C4E7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.Client", "src\ToolDock.Client\ToolDock.Client.csproj", "{6169698E-2925-4DD7-B504-5F1674364C80}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.SmokeTool", "tests\ToolDock.SmokeTool\ToolDock.SmokeTool.csproj", "{11D8182E-AF95-4244-91A4-BF45951C0DCE}"
 EndProject
 Global
@@ -28,6 +32,14 @@ Global
 		{023962B4-F8A7-4DB4-A786-D7702F842A2B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{023962B4-F8A7-4DB4-A786-D7702F842A2B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{023962B4-F8A7-4DB4-A786-D7702F842A2B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2F91B66-E8F5-4382-9CB2-68816D39C4E7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2F91B66-E8F5-4382-9CB2-68816D39C4E7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2F91B66-E8F5-4382-9CB2-68816D39C4E7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2F91B66-E8F5-4382-9CB2-68816D39C4E7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6169698E-2925-4DD7-B504-5F1674364C80}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6169698E-2925-4DD7-B504-5F1674364C80}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6169698E-2925-4DD7-B504-5F1674364C80}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6169698E-2925-4DD7-B504-5F1674364C80}.Release|Any CPU.Build.0 = Release|Any CPU
 		{11D8182E-AF95-4244-91A4-BF45951C0DCE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{11D8182E-AF95-4244-91A4-BF45951C0DCE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{11D8182E-AF95-4244-91A4-BF45951C0DCE}.Release|Any CPU.ActiveCfg = Release|Any CPU

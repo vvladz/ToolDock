@@ -2,7 +2,7 @@ using System.IO.Compression;
 using Microsoft.Extensions.Logging;
 using ToolDock.Common;
 
-namespace ToolDock.Updater;
+namespace ToolDock.Updating;
 
 internal sealed class ReleaseInstaller(
     HttpClient http,
@@ -55,6 +55,7 @@ internal sealed class ReleaseInstaller(
             {
                 Version = release.Version,
                 Root = Path.GetRelativePath(paths.Root, finalDirectory),
+                EntryPointsTracked = true,
                 Commands = commands.Keys.Order(StringComparer.OrdinalIgnoreCase).ToList()
             };
         }

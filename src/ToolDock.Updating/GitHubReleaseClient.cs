@@ -2,7 +2,7 @@ using System.Net.Http.Json;
 using System.Net.Http.Headers;
 using System.Text.Json.Serialization;
 
-namespace ToolDock.Updater;
+namespace ToolDock.Updating;
 
 internal sealed class GitHubReleaseClient
 {

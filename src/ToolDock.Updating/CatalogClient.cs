@@ -1,7 +1,7 @@
 using System.Text.Json;
 using ToolDock.Common;
 
-namespace ToolDock.Updater;
+namespace ToolDock.Updating;
 
 internal sealed class CatalogClient(HttpClient http)
 {

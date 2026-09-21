@@ -48,6 +48,7 @@ public sealed class InstalledTool
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Root { get; init; }
 
+    public bool EntryPointsTracked { get; init; }
     public List<string> Commands { get; init; } = [];
 
     // Legacy state stored the path of the package's single executable.

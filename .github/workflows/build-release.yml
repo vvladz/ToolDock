@@ -39,15 +39,20 @@ jobs:
         run: |
           dotnet publish src/ToolDock.Starter/ToolDock.Starter.csproj -c Release -r win-x64 --self-contained false --no-restore -p:DebugType=None -o artifacts/starter
           dotnet publish src/ToolDock.Updater/ToolDock.Updater.csproj -c Release -r win-x64 --self-contained false --no-restore -p:DebugType=None -o artifacts/updater
+          dotnet publish src/ToolDock.Client/ToolDock.Client.csproj -c Release -r win-x64 --self-contained false --no-restore -p:DebugType=None -o artifacts/client
           dotnet publish tests/ToolDock.SmokeTool/ToolDock.SmokeTool.csproj -c Release --no-restore -o artifacts/smoke-tool
 
       - name: Test updater mutex cleanup
         shell: pwsh
-        run: tests/updater.ps1 -UpdaterPath artifacts/updater/updater.exe
+        run: tests/updater.ps1 -UpdaterPath artifacts/updater/ToolDock.Updater.exe
+
+      - name: Test client output
+        shell: pwsh
+        run: tests/client.ps1 -ClientPath artifacts/client/ToolDock.Client.exe
 
       - name: Test process supervision
         shell: pwsh
-        run: tests/smoke.ps1 -StarterPath artifacts/starter/starter.exe -ToolDirectory artifacts/smoke-tool
+        run: tests/smoke.ps1 -StarterPath artifacts/starter/ToolDock.Starter.exe -ClientPath artifacts/client/ToolDock.Client.exe -ToolDirectory artifacts/smoke-tool
 
       - name: Package release
         shell: pwsh
@@ -55,6 +60,7 @@ jobs:
           New-Item -ItemType Directory -Path artifacts/package/bin -Force | Out-Null
           Copy-Item artifacts/starter/* artifacts/package/bin -Exclude *.pdb -Force
           Copy-Item artifacts/updater/* artifacts/package/bin -Exclude *.pdb -Force
+          Copy-Item artifacts/client/* artifacts/package/bin -Exclude *.pdb -Force
           Compress-Archive -Path artifacts/package/* -DestinationPath artifacts/ToolDock-win-x64.zip
           $archiveSize = (Get-Item artifacts/ToolDock-win-x64.zip).Length
           if ($archiveSize -gt 5MB) { throw "Framework-dependent release is unexpectedly large: $archiveSize bytes" }

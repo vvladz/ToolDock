@@ -89,11 +89,15 @@ try {
     Expand-Archive -LiteralPath $archivePath -DestinationPath $packagePath
 
     $packageBin = Join-Path $packagePath 'bin'
-    $starterSource = Join-Path $packageBin 'starter.exe'
-    $updaterSource = Join-Path $packageBin 'updater.exe'
+    $starterSource = Join-Path $packageBin 'ToolDock.Starter.exe'
+    $updaterSource = Join-Path $packageBin 'ToolDock.Updater.exe'
+    $clientSource = Join-Path $packageBin 'ToolDock.Client.exe'
+    $clientShim = Join-Path $packageBin 'tdctl.cmd'
     if (-not (Test-Path -LiteralPath $starterSource -PathType Leaf) -or
-        -not (Test-Path -LiteralPath $updaterSource -PathType Leaf)) {
-        throw 'Release package is invalid: bin\starter.exe or bin\updater.exe is missing.'
+        -not (Test-Path -LiteralPath $updaterSource -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $clientSource -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $clientShim -PathType Leaf)) {
+        throw 'Release package is missing a ToolDock executable or tdctl.cmd.'
     }
 
     $starterTaskName = 'ToolDock Starter'
@@ -101,9 +105,16 @@ try {
     Get-ScheduledTask -TaskName $starterTaskName, $updaterTaskName -ErrorAction SilentlyContinue |
         Stop-ScheduledTask -ErrorAction SilentlyContinue
 
-    foreach ($processName in @('starter', 'updater')) {
-        $existingExecutable = Join-Path $binPath "$processName.exe"
-        Get-Process -Name $processName -ErrorAction SilentlyContinue | Where-Object {
+    $managedProcesses = @(
+        [pscustomobject]@{ Name = 'starter'; File = 'starter.exe' }
+        [pscustomobject]@{ Name = 'updater'; File = 'updater.exe' }
+        [pscustomobject]@{ Name = 'ToolDock.Starter'; File = 'ToolDock.Starter.exe' }
+        [pscustomobject]@{ Name = 'ToolDock.Updater'; File = 'ToolDock.Updater.exe' }
+        [pscustomobject]@{ Name = 'ToolDock.Client'; File = 'ToolDock.Client.exe' }
+    )
+    foreach ($managedProcess in $managedProcesses) {
+        $existingExecutable = Join-Path $binPath $managedProcess.File
+        Get-Process -Name $managedProcess.Name -ErrorAction SilentlyContinue | Where-Object {
             try { [string]::Equals($_.Path, $existingExecutable, [StringComparison]::OrdinalIgnoreCase) } catch { $false }
         } | Stop-Process -Force
     }
@@ -114,6 +125,11 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $installPath 'logs') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $installPath 'temp') -Force | Out-Null
     Copy-Item -Path (Join-Path $packageBin '*') -Destination $binPath -Force
+    foreach ($legacyName in @('starter', 'updater')) {
+        foreach ($extension in @('.exe', '.dll', '.deps.json', '.runtimeconfig.json')) {
+            Remove-Item -LiteralPath (Join-Path $binPath "$legacyName$extension") -Force -ErrorAction SilentlyContinue
+        }
+    }
 
     $config = [ordered]@{ catalogUrl = $CatalogUrl } | ConvertTo-Json
     $utf8NoBom = New-Object Text.UTF8Encoding($false)
@@ -135,7 +151,7 @@ try {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     $principal = New-ScheduledTaskPrincipal -UserId $identity -LogonType Interactive -RunLevel Limited
 
-    $starterAction = New-ScheduledTaskAction -Execute (Join-Path $binPath 'starter.exe')
+    $starterAction = New-ScheduledTaskAction -Execute (Join-Path $binPath 'ToolDock.Starter.exe')
     $starterTrigger = New-ScheduledTaskTrigger -AtLogOn -User $identity
     $starterSettings = New-ScheduledTaskSettingsSet `
         -MultipleInstances IgnoreNew `
@@ -150,7 +166,7 @@ try {
         -Description 'Starts ToolDock process supervision in the current user session.' `
         -Force | Out-Null
 
-    $updaterAction = New-ScheduledTaskAction -Execute (Join-Path $binPath 'updater.exe')
+    $updaterAction = New-ScheduledTaskAction -Execute (Join-Path $binPath 'ToolDock.Updater.exe')
     $updaterTriggers = @(
         New-ScheduledTaskTrigger -AtLogOn -User $identity
         New-ScheduledTaskTrigger `
@@ -172,7 +188,7 @@ try {
         -Force | Out-Null
 
     Start-ScheduledTask -TaskName $starterTaskName
-    $firstUpdate = Start-Process -FilePath (Join-Path $binPath 'updater.exe') -Wait -PassThru
+    $firstUpdate = Start-Process -FilePath (Join-Path $binPath 'ToolDock.Updater.exe') -Wait -PassThru
     if ($firstUpdate.ExitCode -ne 0) {
         Write-Warning "Initial update returned exit code $($firstUpdate.ExitCode). See $installPath\logs\updater.log."
     }

@@ -5,7 +5,7 @@ namespace ToolDock.Common;
 
 public sealed class StarterClient
 {
-    public const string PipeName = "tool-starter";
+    public const string PipeName = "ToolDock.Starter.v1";
 
     public async Task<string> SendAsync(
         string command,
