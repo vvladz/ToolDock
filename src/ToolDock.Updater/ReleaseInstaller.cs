@@ -20,7 +20,13 @@ internal sealed class ReleaseInstaller(
         var finalDirectory = Path.Combine(toolRoot, version);
         var stageDirectory = Path.Combine(toolRoot, $".install-{Guid.NewGuid():N}");
         var downloadPath = Path.Combine(paths.Temp, $"{name}-{Guid.NewGuid():N}.zip.part");
-        var executableRelativePath = Validation.GetExecutablePath(name, definition);
+        var commands = Validation.GetCommands(name, definition);
+        var daemons = Validation.GetDaemons(name, definition);
+        var executables = commands.Values
+            .Concat(daemons.Values.Select(daemon => daemon.Executable))
+            .Select(path => Validation.ValidateExecutablePath(name, path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         Directory.CreateDirectory(toolRoot);
         try
@@ -32,30 +38,24 @@ internal sealed class ReleaseInstaller(
                 Directory.CreateDirectory(stageDirectory);
                 ZipFile.ExtractToDirectory(downloadPath, stageDirectory);
 
-                var stagedExecutable = ResolveUnder(stageDirectory, executableRelativePath);
-                if (!File.Exists(stagedExecutable))
-                {
-                    throw new InvalidDataException(
-                        $"Archive for {name} does not contain {executableRelativePath} at its root.");
-                }
+                ValidateExecutables(name, stageDirectory, executables);
 
                 Directory.Move(stageDirectory, finalDirectory);
             }
 
-            var installedExecutable = ResolveUnder(finalDirectory, executableRelativePath);
-            if (!File.Exists(installedExecutable))
-            {
-                throw new InvalidDataException(
-                    $"Existing version directory for {name} {version} is incomplete; expected {executableRelativePath}.");
-            }
+            ValidateExecutables(name, finalDirectory, executables);
 
             await Junction.SwitchAsync(Path.Combine(toolRoot, "current"), finalDirectory, cancellationToken);
-            await WriteShimAsync(name, executableRelativePath, cancellationToken);
+            foreach (var (commandName, executable) in commands)
+            {
+                await WriteShimAsync(name, commandName, executable, cancellationToken);
+            }
 
             return new InstalledTool
             {
                 Version = release.Version,
-                Path = Path.GetRelativePath(paths.Root, installedExecutable)
+                Root = Path.GetRelativePath(paths.Root, finalDirectory),
+                Commands = commands.Keys.Order(StringComparer.OrdinalIgnoreCase).ToList()
             };
         }
         finally
@@ -89,13 +89,25 @@ internal sealed class ReleaseInstaller(
     }
 
     private async Task WriteShimAsync(
-        string name,
+        string packageName,
+        string commandName,
         string executableRelativePath,
         CancellationToken cancellationToken)
     {
-        var target = Path.Combine("..", "tools", name, "current", executableRelativePath);
+        var target = Path.Combine("..", "tools", packageName, "current", executableRelativePath);
         var contents = $"@echo off\r\n\"%~dp0{target}\" %*\r\n";
-        await AtomicFile.WriteTextAsync(Path.Combine(paths.Bin, $"{name}.cmd"), contents, cancellationToken);
+        await AtomicFile.WriteTextAsync(Path.Combine(paths.Bin, $"{commandName}.cmd"), contents, cancellationToken);
+    }
+
+    private static void ValidateExecutables(string packageName, string root, IEnumerable<string> executables)
+    {
+        foreach (var executable in executables)
+        {
+            if (!File.Exists(ResolveUnder(root, executable)))
+            {
+                throw new InvalidDataException($"Package {packageName} does not contain {executable}.");
+            }
+        }
     }
 
     private static string ResolveUnder(string root, string relativePath)

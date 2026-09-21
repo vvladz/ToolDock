@@ -61,9 +61,14 @@ try {
                 repo = 'example/smoke'
                 asset = 'smoke.zip'
                 enabled = $true
-                autostart = $true
-                restart = $true
-                executable = 'smoke-tool.exe'
+                commands = [ordered]@{}
+                daemons = [ordered]@{
+                    smoke = [ordered]@{
+                        executable = 'smoke-tool.exe'
+                        autostart = $true
+                        restartOnUpdate = $true
+                    }
+                }
             }
         }
     })
@@ -71,7 +76,8 @@ try {
         tools = [ordered]@{
             smoke = [ordered]@{
                 version = 'v1'
-                path = 'tools\smoke\v1\smoke-tool.exe'
+                root = 'tools\smoke\v1'
+                commands = @()
             }
         }
     })
@@ -120,6 +126,34 @@ try {
     if (-not (Select-String -LiteralPath $logPath -SimpleMatch 'ERR stderr ready' -Quiet)) {
         throw 'Managed stderr was not captured.'
     }
+
+    $reconcile = Invoke-Starter 'package-updated smoke updated'
+    if ($reconcile -ne 'OK restarted=smoke') {
+        throw "Package update reconciliation failed: $reconcile"
+    }
+    if (Get-Process -Id $rootPid, $childPid -ErrorAction SilentlyContinue) {
+        throw 'Package update did not terminate the previous process tree.'
+    }
+
+    $status = Invoke-Starter 'status smoke'
+    if ($status -notlike 'OK running pid=*') {
+        throw "Restarted daemon is not running: $status"
+    }
+    $rootPid = [int]($status -replace '^OK running pid=', '')
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    $restartedChildPid = $null
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $childLine = Get-Content -LiteralPath $logPath | Where-Object { $_ -match 'OUT child pid=(\d+)' } | Select-Object -Last 1
+        if ($childLine -match 'OUT child pid=(\d+)' -and [int]$Matches[1] -ne $childPid) {
+            $restartedChildPid = [int]$Matches[1]
+            break
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    if ($null -eq $restartedChildPid) {
+        throw 'Restarted daemon did not produce child-process output.'
+    }
+    $childPid = $restartedChildPid
 
     $stop = Invoke-Starter 'stop smoke'
     if ($stop -ne 'OK stopped') {

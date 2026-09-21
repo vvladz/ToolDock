@@ -102,28 +102,29 @@ internal static class Program
             {
                 var installed = FindInstalled(state, name);
                 var release = await releases.GetLatestAsync(definition.Repo, definition.Asset, cancellationToken);
+                var changed = installed is null ||
+                    !string.Equals(installed.Version, release.Version, StringComparison.Ordinal);
                 log.LogInformation(
                     "Checking {Tool}: installed={InstalledVersion} latest={LatestVersion}",
                     name,
                     installed?.Version ?? "none",
                     release.Version);
-                if (installed is not null && string.Equals(installed.Version, release.Version, StringComparison.Ordinal))
+                var result = await installer.InstallAsync(name, definition, release, cancellationToken);
+                Upsert(state, name, result);
+                await JsonFiles.WriteAtomicAsync(paths.InstalledStateFile, state, cancellationToken);
+                if (!changed)
                 {
                     continue;
                 }
 
-                var result = await installer.InstallAsync(name, definition, release, cancellationToken);
-                Upsert(state, name, result);
-                await JsonFiles.WriteAtomicAsync(paths.InstalledStateFile, state, cancellationToken);
                 log.LogInformation("Installed {Tool} {Version}", name, result.Version);
 
-                var lifecycleCommand = installed is null
-                    ? definition.Autostart ? "start" : null
-                    : definition.Restart ? "restart" : null;
-                if (lifecycleCommand is not null)
-                {
-                    await TryNotifyStarterAsync(starter, lifecycleCommand, name, log, cancellationToken);
-                }
+                await TryNotifyStarterAsync(
+                    starter,
+                    name,
+                    installed is null ? "installed" : "updated",
+                    log,
+                    cancellationToken);
             }
             catch (Exception exception)
             {
@@ -151,14 +152,17 @@ internal static class Program
 
     private static async Task TryNotifyStarterAsync(
         StarterClient starter,
-        string command,
         string name,
+        string change,
         ILogger log,
         CancellationToken cancellationToken)
     {
         try
         {
-            var response = await starter.SendAsync($"{command} {name}", TimeSpan.FromSeconds(5), cancellationToken);
+            var response = await starter.SendAsync(
+                $"package-updated {name} {change}",
+                TimeSpan.FromSeconds(30),
+                cancellationToken);
             if (response.StartsWith("OK", StringComparison.Ordinal))
             {
                 log.LogInformation("Starter replied: {Response}", response);
@@ -166,8 +170,7 @@ internal static class Program
             else
             {
                 log.LogWarning(
-                    "Starter rejected {Command} {Tool}: {Response}",
-                    command,
+                    "Starter rejected package update for {Tool}: {Response}",
                     name,
                     response);
             }

@@ -14,7 +14,10 @@ internal static class NativeProcessLauncher
     private const uint StartfUseStdHandles = 0x00000100;
     private const uint HandleFlagInherit = 0x00000001;
 
-    public static LaunchedProcess StartSuspendedInJob(string executable, JobObject job)
+    public static LaunchedProcess StartSuspendedInJob(
+        string executable,
+        IReadOnlyList<string> arguments,
+        JobObject job)
     {
         IntPtr stdoutRead = IntPtr.Zero;
         IntPtr stdoutWrite = IntPtr.Zero;
@@ -38,7 +41,11 @@ internal static class NativeProcessLauncher
                 StdOutput = stdoutWrite,
                 StdError = stderrWrite
             };
-            var commandLine = new StringBuilder($"\"{executable}\"");
+            var commandLine = new StringBuilder(QuoteArgument(executable));
+            foreach (var argument in arguments)
+            {
+                commandLine.Append(' ').Append(QuoteArgument(argument));
+            }
             if (!CreateProcess(
                     executable,
                     commandLine,
@@ -104,6 +111,37 @@ internal static class NativeProcessLauncher
             new FileStream(safeHandle, FileAccess.Read, 4096, isAsync: false),
             Encoding.UTF8,
             detectEncodingFromByteOrderMarks: true);
+    }
+
+    private static string QuoteArgument(string argument)
+    {
+        if (argument.Length != 0 && argument.IndexOfAny([' ', '\t', '\n', '\v', '"']) < 0)
+        {
+            return argument;
+        }
+
+        var result = new StringBuilder(argument.Length + 2).Append('"');
+        var backslashes = 0;
+        foreach (var character in argument)
+        {
+            if (character == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (character == '"')
+            {
+                result.Append('\\', backslashes * 2 + 1).Append(character);
+                backslashes = 0;
+                continue;
+            }
+
+            result.Append('\\', backslashes).Append(character);
+            backslashes = 0;
+        }
+
+        return result.Append('\\', backslashes * 2).Append('"').ToString();
     }
 
     private static void CreateOutputPipe(out IntPtr read, out IntPtr write)

@@ -38,13 +38,17 @@ internal sealed class ManagedToolProcess : IAsyncDisposable
     public bool IsRunning => !_process.HasExited;
     public int? ExitCode => _process.HasExited ? _process.ExitCode : null;
 
-    public static ManagedToolProcess Start(string name, string executable, string logPath)
+    public static ManagedToolProcess Start(
+        string name,
+        string executable,
+        IReadOnlyList<string> arguments,
+        string logPath)
     {
         var job = new JobObject();
         var log = new RotatingFileWriter(logPath);
         try
         {
-            var launched = NativeProcessLauncher.StartSuspendedInJob(executable, job);
+            var launched = NativeProcessLauncher.StartSuspendedInJob(executable, arguments, job);
             return new ManagedToolProcess(name, job, launched, log);
         }
         catch

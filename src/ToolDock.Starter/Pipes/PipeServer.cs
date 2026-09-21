@@ -54,11 +54,20 @@ internal sealed class PipeServer(ToolSupervisor supervisor, ILogger<PipeServer> 
         {
             return supervisor.ListAsync(cancellationToken);
         }
+        if (parts is ["package-updated", var packageName, var change] &&
+            change is "installed" or "updated")
+        {
+            return supervisor.PackageUpdatedAsync(
+                packageName,
+                firstInstall: change == "installed",
+                cancellationToken);
+        }
         if (parts is [var command, var name])
         {
             return supervisor.ExecuteAsync(command.ToLowerInvariant(), name, cancellationToken);
         }
 
-        return Task.FromResult("ERROR expected: list or start|stop|restart|status <tool>");
+        return Task.FromResult(
+            "ERROR expected: list, start|stop|restart|status <daemon>, or package-updated <package> installed|updated");
     }
 }

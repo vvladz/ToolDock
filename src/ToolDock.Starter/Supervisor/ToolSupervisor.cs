@@ -20,21 +20,29 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
         }
 
         Validation.ValidateCatalog(catalog);
-        foreach (var (name, definition) in catalog.Tools)
+        foreach (var (packageName, package) in catalog.Tools)
         {
-            if (!definition.Enabled || !definition.Autostart)
+            if (!package.Enabled)
             {
                 continue;
             }
 
-            try
+            foreach (var (daemonName, daemon) in Validation.GetDaemons(packageName, package))
             {
-                var response = await ExecuteAsync("start", name, cancellationToken);
-                log.LogInformation("Autostart {Tool}: {Response}", name, response);
-            }
-            catch (Exception exception)
-            {
-                log.LogError(exception, "Autostart failed for {Tool}", name);
+                if (!daemon.Autostart)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var response = await ExecuteAsync("start", daemonName, cancellationToken);
+                    log.LogInformation("Autostart {Daemon}: {Response}", daemonName, response);
+                }
+                catch (Exception exception)
+                {
+                    log.LogError(exception, "Autostart failed for {Daemon}", daemonName);
+                }
             }
         }
     }
@@ -56,7 +64,67 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
         }
         catch (Exception exception)
         {
-            log.LogError(exception, "{Command} failed for {Tool}", command, name);
+            log.LogError(exception, "{Command} failed for {Daemon}", command, name);
+            return $"ERROR {SingleLine(exception.Message)}";
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<string> PackageUpdatedAsync(
+        string packageName,
+        bool firstInstall,
+        CancellationToken cancellationToken)
+    {
+        Validation.ValidateToolName(packageName);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var catalog = await JsonFiles.ReadRequiredAsync<ToolCatalog>(paths.CatalogCacheFile, cancellationToken);
+            Validation.ValidateCatalog(catalog);
+            var package = Validation.FindDefinition(catalog, packageName);
+            if (!package.Enabled)
+            {
+                return "OK package disabled";
+            }
+
+            var changed = new List<string>();
+            foreach (var (daemonName, daemon) in Validation.GetDaemons(packageName, package))
+            {
+                if (firstInstall)
+                {
+                    if (daemon.Autostart)
+                    {
+                        var response = await StartCoreAsync(daemonName, cancellationToken);
+                        if (!response.StartsWith("OK", StringComparison.Ordinal))
+                        {
+                            return response;
+                        }
+                        changed.Add(daemonName);
+                    }
+                }
+                else if (daemon.RestartOnUpdate &&
+                         _processes.TryGetValue(daemonName, out var process) &&
+                         process.IsRunning)
+                {
+                    var response = await RestartCoreAsync(daemonName, cancellationToken);
+                    if (!response.StartsWith("OK", StringComparison.Ordinal))
+                    {
+                        return response;
+                    }
+                    changed.Add(daemonName);
+                }
+            }
+
+            return changed.Count == 0
+                ? "OK no daemon changes"
+                : $"OK {(firstInstall ? "started" : "restarted")}={string.Join(',', changed)}";
+        }
+        catch (Exception exception)
+        {
+            log.LogError(exception, "Package update reconciliation failed for {Package}", packageName);
             return $"ERROR {SingleLine(exception.Message)}";
         }
         finally
@@ -72,8 +140,11 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
         {
             var catalog = await JsonFiles.ReadRequiredAsync<ToolCatalog>(paths.CatalogCacheFile, cancellationToken);
             Validation.ValidateCatalog(catalog);
-            var names = catalog.Tools.Keys.Order(StringComparer.OrdinalIgnoreCase).ToArray();
-            return names.Length == 0 ? "OK no tools" : $"OK {string.Join(' ', names)}";
+            var names = catalog.Tools
+                .SelectMany(pair => Validation.GetDaemons(pair.Key, pair.Value).Keys)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return names.Length == 0 ? "OK no daemons" : $"OK {string.Join(' ', names)}";
         }
         catch (Exception exception)
         {
@@ -101,22 +172,34 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
 
         var catalog = await JsonFiles.ReadRequiredAsync<ToolCatalog>(paths.CatalogCacheFile, cancellationToken);
         Validation.ValidateCatalog(catalog);
-        var definition = Validation.FindDefinition(catalog, name);
-        if (!definition.Enabled)
+        var (packageName, package, daemon) = Validation.FindDaemon(catalog, name);
+        if (!package.Enabled)
         {
-            return $"ERROR tool is disabled: {name}";
+            return $"ERROR package is disabled: {packageName}";
         }
 
         var state = await JsonFiles.ReadRequiredAsync<InstalledState>(paths.InstalledStateFile, cancellationToken);
-        var installed = Validation.FindInstalled(state, name);
-        var executable = paths.ResolveUnderRoot(installed.Path);
+        var installed = Validation.FindInstalled(state, packageName);
+        var packageRoot = paths.ResolveUnderRoot(
+            installed.Root ?? Path.Combine("tools", packageName, installed.Version));
+        var executable = ResolveUnder(
+            packageRoot,
+            Validation.ValidateExecutablePath($"daemon {name}", daemon.Executable));
         if (!File.Exists(executable))
         {
-            return $"ERROR installed executable is missing: {installed.Path}";
+            return $"ERROR installed executable is missing: {Path.GetRelativePath(paths.Root, executable)}";
         }
 
-        log.LogInformation("Starting {Tool} {Version}", name, installed.Version);
-        var process = ManagedToolProcess.Start(name, executable, Path.Combine(paths.Logs, $"{name}.log"));
+        log.LogInformation(
+            "Starting {Daemon} from {Package} {Version}",
+            name,
+            packageName,
+            installed.Version);
+        var process = ManagedToolProcess.Start(
+            name,
+            executable,
+            daemon.Arguments,
+            Path.Combine(paths.Logs, $"{name}.log"));
         _processes.Add(name, process);
         return $"OK running pid={process.ProcessId}";
     }
@@ -128,7 +211,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
             return "OK stopped";
         }
 
-        log.LogInformation("Stopping {Tool}", name);
+        log.LogInformation("Stopping {Daemon}", name);
         try
         {
             await process.StopAsync();
@@ -144,7 +227,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
     {
         if (_processes.TryGetValue(name, out var process))
         {
-            log.LogInformation("Restarting {Tool}", name);
+            log.LogInformation("Restarting {Daemon}", name);
             _processes.Remove(name);
             try
             {
@@ -169,6 +252,18 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
         return process.IsRunning
             ? $"OK running pid={process.ProcessId}"
             : $"OK stopped exit={process.ExitCode}";
+    }
+
+    private static string ResolveUnder(string root, string relativePath)
+    {
+        var resolved = Path.GetFullPath(relativePath, root);
+        var prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!resolved.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Executable path escapes the installed package directory.");
+        }
+
+        return resolved;
     }
 
     private static string SingleLine(string message)
