@@ -190,7 +190,7 @@ try {
     Start-ScheduledTask -TaskName $starterTaskName
     $firstUpdate = Start-Process -FilePath (Join-Path $binPath 'ToolDock.Updater.exe') -Wait -PassThru
     if ($firstUpdate.ExitCode -ne 0) {
-        Write-Warning "Initial update returned exit code $($firstUpdate.ExitCode). See $installPath\logs\updater.log."
+        Write-Warning "Initial update returned exit code $($firstUpdate.ExitCode). See $installPath\logs\ToolDock.Updater.log."
     }
 
     Write-Host "ToolDock $($release.tag_name) installed in $installPath."

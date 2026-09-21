@@ -63,6 +63,11 @@ function Invoke-Client([string] $Command) {
 }
 
 try {
+    $catalogCheck = @(& (Join-Path $toolSource 'smoke-tool.exe') --verify-catalog-schema)
+    if ($LASTEXITCODE -ne 0 -or ($catalogCheck -join '') -ne 'legacy catalog rejected') {
+        throw "Legacy catalog validation failed: $($catalogCheck -join ',')"
+    }
+
     New-Item -ItemType Directory -Path $versionRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
     Copy-Item -Path (Join-Path $toolSource '*') -Destination $versionRoot -Recurse
@@ -118,7 +123,7 @@ try {
     if ((Invoke-Client 'list') -ne 'OK smoke') {
         throw 'Tool list did not include the configured tool.'
     }
-    if ((Invoke-Client 'logs starter --lines 1') -notmatch 'Pipe server started') {
+    if ((Invoke-Client 'logs ToolDock.Starter --lines 1') -notmatch 'Pipe server started') {
         throw 'Client could not read the live starter log.'
     }
 

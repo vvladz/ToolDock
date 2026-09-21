@@ -7,27 +7,23 @@ public sealed class ToolDockConfig
     public required string CatalogUrl { get; init; }
 }
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class ToolCatalog
 {
     public Dictionary<string, ToolDefinition> Tools { get; init; } = [];
 }
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class ToolDefinition
 {
     public required string Repo { get; init; }
     public required string Asset { get; init; }
     public bool Enabled { get; init; } = true;
-    public Dictionary<string, string> Commands { get; init; } = [];
-    public Dictionary<string, DaemonDefinition> Daemons { get; init; } = [];
-
-    // Legacy single-entry-point catalog fields. New catalogs should use Commands and Daemons.
-    public bool Autostart { get; init; }
-    public bool Restart { get; init; }
-
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Executable { get; init; }
+    public required Dictionary<string, string> Commands { get; init; }
+    public required Dictionary<string, DaemonDefinition> Daemons { get; init; }
 }
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class DaemonDefinition
 {
     public required string Executable { get; init; }

@@ -26,7 +26,7 @@ try {
         throw "Updater returned $exitCode instead of the handled failure exit code 1."
     }
 
-    $log = Get-Content -LiteralPath (Join-Path $testRoot 'logs\updater.log') -Raw
+    $log = Get-Content -LiteralPath (Join-Path $testRoot 'logs\ToolDock.Updater.log') -Raw
     if ($log -notmatch 'update failed') {
         throw 'Updater did not log the expected handled failure.'
     }

@@ -27,7 +27,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
                 continue;
             }
 
-            foreach (var (daemonName, daemon) in Validation.GetDaemons(packageName, package))
+            foreach (var (daemonName, daemon) in package.Daemons)
             {
                 if (!daemon.Autostart)
                 {
@@ -91,7 +91,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
             }
 
             var changed = new List<string>();
-            foreach (var (daemonName, daemon) in Validation.GetDaemons(packageName, package))
+            foreach (var (daemonName, daemon) in package.Daemons)
             {
                 if (firstInstall)
                 {
@@ -141,7 +141,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
             var catalog = await JsonFiles.ReadRequiredAsync<ToolCatalog>(paths.CatalogCacheFile, cancellationToken);
             Validation.ValidateCatalog(catalog);
             var names = catalog.Tools
-                .SelectMany(pair => Validation.GetDaemons(pair.Key, pair.Value).Keys)
+                .SelectMany(pair => pair.Value.Daemons.Keys)
                 .Order(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             return names.Length == 0 ? "OK no daemons" : $"OK {string.Join(' ', names)}";

@@ -13,7 +13,7 @@ internal static class Program
         var paths = new ToolDockPaths();
         paths.EnsureDirectories();
         using var loggerFactory = LoggerFactory.Create(builder =>
-            builder.AddProvider(new RotatingFileLoggerProvider(Path.Combine(paths.Logs, "starter.log"))));
+            builder.AddProvider(new RotatingFileLoggerProvider(Path.Combine(paths.Logs, "ToolDock.Starter.log"))));
         var log = loggerFactory.CreateLogger("ToolDock.Starter");
 
         if (args.Length != 0)

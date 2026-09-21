@@ -35,21 +35,12 @@ public static partial class Validation
                 throw new InvalidDataException($"Invalid release asset name for {name}.");
             }
 
-            if (HasExplicitEntryPoints(definition) &&
-                (definition.Executable is not null || definition.Autostart || definition.Restart))
-            {
-                throw new InvalidDataException(
-                    $"Package {name} cannot mix legacy executable/autostart/restart fields with commands/daemons.");
-            }
-
-            var commands = GetCommands(name, definition);
-            var daemons = GetDaemons(name, definition);
-            if (commands.Count == 0 && daemons.Count == 0)
+            if (definition.Commands.Count == 0 && definition.Daemons.Count == 0)
             {
                 throw new InvalidDataException($"Package {name} has no commands or daemons.");
             }
 
-            foreach (var (commandName, executable) in commands)
+            foreach (var (commandName, executable) in definition.Commands)
             {
                 ValidateToolName(commandName);
                 if (!commandNames.Add(commandName))
@@ -60,7 +51,7 @@ public static partial class Validation
                 _ = ValidateExecutablePath($"command {commandName}", executable);
             }
 
-            foreach (var (daemonName, daemon) in daemons)
+            foreach (var (daemonName, daemon) in definition.Daemons)
             {
                 ValidateToolName(daemonName);
                 if (!daemonNames.Add(daemonName))
@@ -97,29 +88,6 @@ public static partial class Validation
         return version;
     }
 
-    public static IReadOnlyDictionary<string, string> GetCommands(string name, ToolDefinition definition)
-        => HasExplicitEntryPoints(definition)
-            ? definition.Commands
-            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                [name] = definition.Executable ?? $"{name}.exe"
-            };
-
-    public static IReadOnlyDictionary<string, DaemonDefinition> GetDaemons(
-        string name,
-        ToolDefinition definition)
-        => HasExplicitEntryPoints(definition)
-            ? definition.Daemons
-            : new Dictionary<string, DaemonDefinition>(StringComparer.OrdinalIgnoreCase)
-            {
-                [name] = new DaemonDefinition
-                {
-                    Executable = definition.Executable ?? $"{name}.exe",
-                    Autostart = definition.Autostart,
-                    RestartOnUpdate = definition.Restart
-                }
-            };
-
     public static string ValidateExecutablePath(string owner, string relativePath)
     {
         if (Path.IsPathRooted(relativePath) || string.IsNullOrWhiteSpace(relativePath))
@@ -150,7 +118,7 @@ public static partial class Validation
     {
         foreach (var (packageName, package) in catalog.Tools)
         {
-            var daemon = GetDaemons(packageName, package)
+            var daemon = package.Daemons
                 .FirstOrDefault(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase));
             if (daemon.Value is not null)
             {
@@ -164,7 +132,4 @@ public static partial class Validation
     public static InstalledTool FindInstalled(InstalledState state, string name)
         => state.Tools.FirstOrDefault(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)).Value
            ?? throw new KeyNotFoundException($"Package is not installed: {name}");
-
-    private static bool HasExplicitEntryPoints(ToolDefinition definition)
-        => definition.Commands.Count != 0 || definition.Daemons.Count != 0;
 }

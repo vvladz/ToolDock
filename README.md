@@ -102,8 +102,6 @@ Fields:
 | `autostart` | Start the daemon after sign-in or its first installation |
 | `restartOnUpdate` | Restart the daemon after its package changes, if it is currently running |
 
-The previous single-executable `executable`/`autostart`/`restart` format remains readable for compatibility.
-
 Versions are installed side by side and exposed through a `current` directory junction:
 
 ```text
@@ -134,19 +132,19 @@ After a package update, the update engine notifies the starter. The starter alon
 
 Logs are stored in `%LOCALAPPDATA%\ToolDock\logs`:
 
-- `starter.log`: supervisor and Named Pipe diagnostics;
-- `updater.log`: scheduled and interactive update diagnostics;
+- `ToolDock.Starter.log`: supervisor and Named Pipe diagnostics;
+- `ToolDock.Updater.log`: scheduled and interactive update diagnostics;
 - `<daemon>.log`: captured stdout, stderr, and lifecycle events.
 
 View them through the client:
 
 ```powershell
-tdctl logs updater
+tdctl logs ToolDock.Updater
 tdctl logs farshell --lines 200
 tdctl logs farshell --follow
 ```
 
-Daemon diagnostics use `Microsoft.Extensions.Logging`. Scheduled updates write to `updater.log`; `tdctl update` writes the same operation to `updater.log` and the terminal. The client does not maintain a separate log of control commands.
+Daemon diagnostics use `Microsoft.Extensions.Logging`. Scheduled updates write to `ToolDock.Updater.log`; `tdctl update` writes the same operation to `ToolDock.Updater.log` and the terminal. The client does not maintain a separate log of control commands.
 
 Logs rotate at 10 MB with five archives retained.
 

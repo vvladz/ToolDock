@@ -14,12 +14,12 @@ $previousHome = $env:TOOLDOCK_HOME
 try {
     $logs = New-Item -ItemType Directory -Path (Join-Path $testRoot 'logs') -Force
     [IO.File]::WriteAllLines(
-        (Join-Path $logs.FullName 'updater.log'),
+        (Join-Path $logs.FullName 'ToolDock.Updater.log'),
         @('first', 'second', 'third'),
         [Text.UTF8Encoding]::new($false))
     $env:TOOLDOCK_HOME = $testRoot
 
-    $output = @(& $client logs updater --lines 2)
+    $output = @(& $client logs ToolDock.Updater --lines 2)
     if ($LASTEXITCODE -ne 0 -or ($output -join ',') -ne 'second,third') {
         throw "Unexpected log output: $($output -join ',')"
     }
@@ -37,9 +37,9 @@ try {
     if ($LASTEXITCODE -ne 1 -or -not ($updateOutput -match 'Fetching catalog')) {
         throw "Interactive update did not report the expected failure: $($updateOutput -join ',')"
     }
-    $updateLog = Get-Content -LiteralPath (Join-Path $logs.FullName 'updater.log') -Raw
+    $updateLog = Get-Content -LiteralPath (Join-Path $logs.FullName 'ToolDock.Updater.log') -Raw
     if ($updateLog -notmatch 'Update failed') {
-        throw 'Interactive update did not append its failure to updater.log.'
+        throw 'Interactive update did not append its failure to ToolDock.Updater.log.'
     }
 
     'client logs, help, and update: OK'

@@ -106,8 +106,8 @@ The scheduled updater and interactive client differ only at the host boundary:
 
 | Host | Subsystem | Cancellation | Log providers |
 |---|---|---|---|
-| `ToolDock.Updater.exe` | WinExe | process lifetime | rotating `updater.log` |
-| `tdctl update` | Exe | Ctrl+C | rotating `updater.log` and terminal |
+| `ToolDock.Updater.exe` | WinExe | process lifetime | rotating `ToolDock.Updater.log` |
+| `tdctl update` | Exe | Ctrl+C | rotating `ToolDock.Updater.log` and terminal |
 
 ### Client
 
@@ -121,7 +121,7 @@ The client does not own managed processes and does not have a `client.log`.
 
 ## Catalog model
 
-The existing top-level `tools` name is retained for compatibility, but every entry represents an installation package:
+The top-level `tools` object maps package names to installation definitions:
 
 ```json
 {
@@ -148,18 +148,6 @@ The existing top-level `tools` name is retained for compatibility, but every ent
 
 Package names, command names, and daemon names are case-insensitively unique within their respective namespaces. Command and daemon executable paths must remain under the extracted package directory.
 
-For migration, a package using the old fields:
-
-```json
-{
-  "executable": "tool.exe",
-  "autostart": true,
-  "restart": true
-}
-```
-
-is normalized to one command and one daemon named after the package.
-
 ## Installation layout
 
 ```text
@@ -178,8 +166,8 @@ is normalized to one command and one daemon named after the package.
 │   ├── catalog.json
 │   └── installed.json
 ├── logs\
-│   ├── starter.log
-│   ├── updater.log
+│   ├── ToolDock.Starter.log
+│   ├── ToolDock.Updater.log
 │   └── <daemon>.log
 ├── temp\
 └── config.json

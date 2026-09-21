@@ -4,4 +4,7 @@
     <AssemblyName>smoke-tool</AssemblyName>
     <RootNamespace>ToolDock.SmokeTool</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ToolDock.Common\ToolDock.Common.csproj" />
+  </ItemGroup>
 </Project>

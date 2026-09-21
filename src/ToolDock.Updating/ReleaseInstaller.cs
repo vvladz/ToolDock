@@ -20,8 +20,8 @@ internal sealed class ReleaseInstaller(
         var finalDirectory = Path.Combine(toolRoot, version);
         var stageDirectory = Path.Combine(toolRoot, $".install-{Guid.NewGuid():N}");
         var downloadPath = Path.Combine(paths.Temp, $"{name}-{Guid.NewGuid():N}.zip.part");
-        var commands = Validation.GetCommands(name, definition);
-        var daemons = Validation.GetDaemons(name, definition);
+        var commands = definition.Commands;
+        var daemons = definition.Daemons;
         var executables = commands.Values
             .Concat(daemons.Values.Select(daemon => daemon.Executable))
             .Select(path => Validation.ValidateExecutablePath(name, path))

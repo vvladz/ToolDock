@@ -13,7 +13,7 @@ internal static class Program
           tdctl list
           tdctl start|stop|restart|status <daemon>
           tdctl update
-          tdctl logs <starter|updater|daemon> [--lines <count>] [--follow]
+          tdctl logs <ToolDock.Starter|ToolDock.Updater|daemon> [--lines <count>] [--follow]
         """;
 
     public static int Main(string[] args)
@@ -77,7 +77,7 @@ internal static class Program
         var paths = new ToolDockPaths();
         paths.EnsureDirectories();
         using var loggerFactory = LoggerFactory.Create(builder => builder
-            .AddProvider(new RotatingFileLoggerProvider(Path.Combine(paths.Logs, "updater.log")))
+            .AddProvider(new RotatingFileLoggerProvider(Path.Combine(paths.Logs, "ToolDock.Updater.log")))
             .AddProvider(new TerminalLoggerProvider()));
         using var cancellation = new CancellationTokenSource();
         Console.CancelKeyPress += Cancel;
