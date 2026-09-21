@@ -43,6 +43,8 @@ try {
     }
 
     'client logs, help, and update: OK'
+    # GitHub Actions propagates the last native process exit code after the script returns.
+    $global:LASTEXITCODE = 0
 }
 finally {
     $env:TOOLDOCK_HOME = $previousHome
