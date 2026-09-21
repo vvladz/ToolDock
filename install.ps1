@@ -1,8 +1,10 @@
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $true)]
     [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')]
-    [string] $Repository = 'vvladz/ToolDock',
+    [string] $Repository,
 
+    [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string] $CatalogUrl,
 
@@ -32,8 +34,10 @@ if ($LASTEXITCODE -ne 0 -or -not ($installedRuntimes -match '^Microsoft\.NETCore
     throw 'ToolDock requires the .NET 10 Runtime (x64): https://dotnet.microsoft.com/download/dotnet/10.0'
 }
 
-if ([string]::IsNullOrWhiteSpace($CatalogUrl)) {
-    $CatalogUrl = "https://raw.githubusercontent.com/$Repository/master/tools.json"
+$catalogUri = $null
+if (-not [Uri]::TryCreate($CatalogUrl, [UriKind]::Absolute, [ref] $catalogUri) -or
+    $catalogUri.Scheme -ne [Uri]::UriSchemeHttps) {
+    throw 'CatalogUrl must be an absolute HTTPS URL.'
 }
 
 $installPath = [IO.Path]::GetFullPath($InstallRoot)

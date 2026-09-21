@@ -376,12 +376,12 @@ The laptop polls GitHub periodically.
 
 # Central tool catalog
 
-`updater.exe` knows one fixed catalog URL.
+`updater.exe` reads one configured catalog URL from the local ToolDock configuration.
 
 Example:
 
 ```text
-https://raw.githubusercontent.com/<owner>/<repo>/master/tools.json
+https://example.org/tooldock/tools.json
 ```
 
 The catalog answers:

@@ -17,26 +17,20 @@ ToolDock works without administrator privileges, inbound connections, SSH, or Wi
 
 ## Installation
 
-Install the latest ToolDock release with:
+Choose the HTTPS URL of your tool catalog, then install the latest ToolDock release with:
 
 ```powershell
-irm 'https://raw.githubusercontent.com/vvladz/ToolDock/master/install.ps1' | iex
+& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/vvladz/ToolDock/master/install.ps1'))) -Repository 'vvladz/ToolDock' -CatalogUrl 'https://example.org/tools.json'
 ```
 
 To inspect the remote script before running it, download it first:
 
 ```powershell
 Invoke-WebRequest 'https://raw.githubusercontent.com/vvladz/ToolDock/master/install.ps1' -OutFile install.ps1
-.\install.ps1
+.\install.ps1 -Repository 'vvladz/ToolDock' -CatalogUrl 'https://example.org/tools.json'
 ```
 
-By default, ToolDock loads the catalog from `https://raw.githubusercontent.com/vvladz/ToolDock/master/tools.json`. To use another URL, specify it explicitly:
-
-```powershell
-.\install.ps1 -CatalogUrl 'https://example.org/tools.json'
-```
-
-Use `-Repository owner/repository` when installing a fork whose releases and default catalog should be used instead.
+ToolDock does not assume a catalog location. `-CatalogUrl` is required and is stored in `%LOCALAPPDATA%\ToolDock\config.json`. `-Repository` selects the repository from which ToolDock itself is installed; use another `owner/repository` value when installing a fork.
 
 The installer:
 
@@ -51,7 +45,7 @@ To update ToolDock itself, run the installer again. Use `-Version v1.2.3` to ins
 
 ## Tool catalog
 
-Edit `tools.json` on the default branch:
+Host a JSON catalog at any HTTPS URL. The repository includes [`tools.example.json`](tools.example.json) as a starting point:
 
 ```json
 {
