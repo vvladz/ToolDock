@@ -58,12 +58,12 @@ $releaseUri = if ([string]::IsNullOrWhiteSpace($Version)) {
 
 Write-Host "Resolving ToolDock release from $Repository..."
 $release = Invoke-RestMethod -Uri $releaseUri -Headers $headers
-$matchingAssets = @($release.assets) | Where-Object { $_.name -ceq $assetName }
+$matchingAssets = @($release.assets | Where-Object { $_.name -ceq $assetName })
 if ($matchingAssets.Count -ne 1) {
     throw "Release '$($release.tag_name)' does not contain $assetName."
 }
 $asset = $matchingAssets[0]
-$matchingChecksums = @($release.assets) | Where-Object { $_.name -ceq $checksumAssetName }
+$matchingChecksums = @($release.assets | Where-Object { $_.name -ceq $checksumAssetName })
 if ($matchingChecksums.Count -ne 1) {
     throw "Release '$($release.tag_name)' does not contain $checksumAssetName."
 }

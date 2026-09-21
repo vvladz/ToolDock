@@ -30,6 +30,10 @@ jobs:
       - name: Build
         run: dotnet build ToolDock.sln -c Release --no-restore
 
+      - name: Test Windows PowerShell installer compatibility
+        shell: powershell
+        run: tests/install-script.ps1 -InstallerPath install.ps1
+
       - name: Publish Windows executables
         shell: pwsh
         run: |
