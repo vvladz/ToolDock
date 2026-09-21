@@ -96,11 +96,14 @@ farshell --help
 ## Process management
 
 ```powershell
+starter list
 starter status farshell
 starter start farshell
 starter restart farshell
 starter stop farshell
 ```
+
+`starter list` prints the tool names from the current cached catalog.
 
 Each application is created in a suspended state, assigned to its own Windows Job Object, and only then allowed to run. As a result, `stop` and `restart` terminate the application's complete process tree rather than only its root PID.
 

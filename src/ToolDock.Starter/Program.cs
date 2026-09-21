@@ -7,6 +7,8 @@ namespace ToolDock.Starter;
 
 internal static class Program
 {
+    private const string Usage = "Usage: starter.exe list | starter.exe start|stop|restart|status <tool>";
+
     public static int Main(string[] args)
     {
         var attached = ConsoleHost.TryAttachParent();
@@ -16,7 +18,7 @@ internal static class Program
 
         if (args is ["--help" or "-h"])
         {
-            log.Info("Usage: starter.exe [start|stop|restart|status <tool>]");
+            log.Info(Usage);
             return 0;
         }
 
@@ -66,17 +68,30 @@ internal static class Program
 
     private static async Task<int> RunClientAsync(string[] args, ILog log)
     {
-        if (args.Length != 2 || args[0] is not ("start" or "stop" or "restart" or "status"))
+        string request;
+        if (args is ["list"])
         {
-            log.Error("Usage: starter.exe [start|stop|restart|status <tool>]");
+            request = "list";
+        }
+        else if (args is [var command, var name] &&
+                 command is "start" or "stop" or "restart" or "status")
+        {
+            request = $"{command} {name}";
+        }
+        else
+        {
+            log.Error(Usage);
             return 2;
         }
 
         try
         {
-            Validation.ValidateToolName(args[1]);
+            if (args.Length == 2)
+            {
+                Validation.ValidateToolName(args[1]);
+            }
             var response = await new StarterClient().SendAsync(
-                $"{args[0]} {args[1]}",
+                request,
                 TimeSpan.FromSeconds(5));
             if (response.StartsWith("OK", StringComparison.Ordinal))
             {

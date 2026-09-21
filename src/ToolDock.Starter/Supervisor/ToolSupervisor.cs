@@ -65,6 +65,27 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILog log) : IAsyncDisp
         }
     }
 
+    public async Task<string> ListAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var catalog = await JsonFiles.ReadRequiredAsync<ToolCatalog>(paths.CatalogCacheFile, cancellationToken);
+            Validation.ValidateCatalog(catalog);
+            var names = catalog.Tools.Keys.Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            return names.Length == 0 ? "OK no tools" : $"OK {string.Join(' ', names)}";
+        }
+        catch (Exception exception)
+        {
+            log.Error("list failed", exception);
+            return $"ERROR {SingleLine(exception.Message)}";
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private async Task<string> StartCoreAsync(string name, CancellationToken cancellationToken)
     {
         if (_processes.TryGetValue(name, out var existing))

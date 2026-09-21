@@ -50,11 +50,15 @@ internal sealed class PipeServer(ToolSupervisor supervisor, ILog log)
         }
 
         var parts = request.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length != 2)
+        if (parts is ["list"])
         {
-            return Task.FromResult("ERROR expected: start|stop|restart|status <tool>");
+            return supervisor.ListAsync(cancellationToken);
+        }
+        if (parts is [var command, var name])
+        {
+            return supervisor.ExecuteAsync(command.ToLowerInvariant(), name, cancellationToken);
         }
 
-        return supervisor.ExecuteAsync(parts[0].ToLowerInvariant(), parts[1], cancellationToken);
+        return Task.FromResult("ERROR expected: list or start|stop|restart|status <tool>");
     }
 }

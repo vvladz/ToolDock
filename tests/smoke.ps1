@@ -97,6 +97,9 @@ try {
     if ($status -notlike 'OK running pid=*') {
         throw "Autostart failed: $status; pipe error: $lastConnectError"
     }
+    if ((Invoke-Starter 'list') -ne 'OK smoke') {
+        throw 'Tool list did not include the configured tool.'
+    }
 
     $rootPid = [int]($status -replace '^OK running pid=', '')
     $deadline = [DateTime]::UtcNow.AddSeconds(10)

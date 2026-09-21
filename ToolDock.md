@@ -865,6 +865,7 @@ The protocol should deliberately remain simple.
 Initial commands:
 
 ```text
+list
 start <tool>
 stop <tool>
 restart <tool>
@@ -899,6 +900,12 @@ Possible status response:
 
 ```text
 OK running pid=1234
+```
+
+Possible list response:
+
+```text
+OK devproxy farshell
 ```
 
 No JSON protocol is required for the MVP.
@@ -1581,7 +1588,8 @@ The first usable version should contain only the following.
 - `start`;
 - `stop`;
 - `restart`;
-- `status`.
+- `status`;
+- `list`.
 
 ## Updater MVP
 
