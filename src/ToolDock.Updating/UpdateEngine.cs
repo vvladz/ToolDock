@@ -143,6 +143,10 @@ internal sealed class UpdateEngine
                 response);
             return false;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception exception)
         {
             _log.LogWarning(
