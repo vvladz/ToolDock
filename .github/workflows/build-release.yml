@@ -41,6 +41,10 @@ jobs:
           dotnet publish src/ToolDock.Updater/ToolDock.Updater.csproj -c Release -r win-x64 --self-contained false --no-restore -p:DebugType=None -o artifacts/updater
           dotnet publish tests/ToolDock.SmokeTool/ToolDock.SmokeTool.csproj -c Release --no-restore -o artifacts/smoke-tool
 
+      - name: Test updater mutex cleanup
+        shell: pwsh
+        run: tests/updater.ps1 -UpdaterPath artifacts/updater/updater.exe
+
       - name: Test process supervision
         shell: pwsh
         run: tests/smoke.ps1 -StarterPath artifacts/starter/starter.exe -ToolDirectory artifacts/smoke-tool

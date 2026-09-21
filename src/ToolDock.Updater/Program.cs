@@ -6,7 +6,7 @@ namespace ToolDock.Updater;
 
 internal static class Program
 {
-    public static async Task<int> Main(string[] args)
+    public static int Main(string[] args)
     {
         var attached = ConsoleHost.TryAttachParent();
         var paths = new ToolDockPaths();
@@ -47,7 +47,7 @@ internal static class Program
                 return 0;
             }
 
-            return await RunAsync(paths, log, CancellationToken.None);
+            return RunAsync(paths, log, CancellationToken.None).GetAwaiter().GetResult();
         }
         catch (Exception exception)
         {

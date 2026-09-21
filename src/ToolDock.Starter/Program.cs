@@ -7,7 +7,7 @@ namespace ToolDock.Starter;
 
 internal static class Program
 {
-    public static async Task<int> Main(string[] args)
+    public static int Main(string[] args)
     {
         var attached = ConsoleHost.TryAttachParent();
         var paths = new ToolDockPaths();
@@ -22,7 +22,7 @@ internal static class Program
 
         if (args.Length != 0)
         {
-            return await RunClientAsync(args, log);
+            return RunClientAsync(args, log).GetAwaiter().GetResult();
         }
 
         using var mutex = new Mutex(initiallyOwned: false, @"Local\ToolDock.Starter");
@@ -48,7 +48,7 @@ internal static class Program
             }
 
             log.Info("starter initialized");
-            return await RunServerAsync(paths, log, attached);
+            return RunServerAsync(paths, log, attached).GetAwaiter().GetResult();
         }
         catch (Exception exception)
         {
