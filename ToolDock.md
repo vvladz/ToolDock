@@ -25,6 +25,8 @@ tdctl.cmd                       short client shim
 
 `ToolDock.Client.exe` is a console-subsystem application. It writes results to stdout, errors to stderr, and never needs to attach to a parent console manually.
 
+The three executables are framework-dependent single-file publications for `win-x64`. ToolDock assemblies and logging dependencies are bundled into each executable, while the shared .NET 10 runtime remains an installation prerequisite.
+
 ## Component boundaries
 
 ```text
@@ -247,7 +249,7 @@ The Windows workflow:
 
 1. restores and builds the solution;
 2. verifies Windows PowerShell installer compatibility;
-3. publishes all three executables;
+3. publishes all three executables as framework-dependent single files and rejects managed sidecars;
 4. tests updater mutex ownership and collision behavior;
 5. tests client output and interactive updating;
 6. runs an actual autostart, argument, output-capture, package-restart, and process-tree smoke cycle;

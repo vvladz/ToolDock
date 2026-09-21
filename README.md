@@ -8,6 +8,8 @@ ToolDock works without administrator privileges, inbound connections, SSH, or Wi
 - `ToolDock.Updater.exe`: a windowless, one-shot updater launched by Task Scheduler;
 - `ToolDock.Client.exe`: the interactive console client exposed through the `tdctl` shim.
 
+All three executables are published as framework-dependent single files. They require the .NET 10 x64 runtime but do not carry separate ToolDock or Microsoft.Extensions assemblies.
+
 ## Requirements
 
 - Windows 10/11 x64;
@@ -156,6 +158,6 @@ Local builds require the .NET 10 SDK:
 dotnet build ToolDock.sln -c Release
 ```
 
-Pull requests build, package, and run the Windows integration tests. Every successful push to `master` creates a GitHub Release containing `ToolDock-win-x64.zip` and its SHA-256 file. Release patch versions use the stable GitHub Actions run number.
+Pull requests build, package, verify the single-file layout, and run the Windows integration tests. Every successful push to `master` creates a GitHub Release containing `ToolDock-win-x64.zip` and its SHA-256 file. Release patch versions use the stable GitHub Actions run number.
 
 See [ToolDock.md](ToolDock.md) for the detailed architecture and invariants.

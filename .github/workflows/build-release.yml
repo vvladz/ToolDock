@@ -46,6 +46,11 @@ jobs:
           dotnet publish src/ToolDock.Updater/ToolDock.Updater.csproj -c Release -r win-x64 --self-contained false --no-restore -p:DebugType=None -p:Version=$env:TOOLDOCK_VERSION -o artifacts/updater
           dotnet publish src/ToolDock.Client/ToolDock.Client.csproj -c Release -r win-x64 --self-contained false --no-restore -p:DebugType=None -p:Version=$env:TOOLDOCK_VERSION -o artifacts/client
           dotnet publish tests/ToolDock.SmokeTool/ToolDock.SmokeTool.csproj -c Release --no-restore -o artifacts/smoke-tool
+          $sidecars = @(Get-ChildItem artifacts/starter, artifacts/updater, artifacts/client -File |
+            Where-Object { $_.Extension -in @('.dll', '.json') })
+          if ($sidecars.Count -ne 0) {
+            throw "Single-file publish produced sidecar files: $($sidecars.FullName -join ', ')"
+          }
 
       - name: Test updater mutex cleanup
         shell: pwsh
