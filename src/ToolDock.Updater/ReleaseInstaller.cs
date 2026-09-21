@@ -1,10 +1,13 @@
 using System.IO.Compression;
+using Microsoft.Extensions.Logging;
 using ToolDock.Common;
-using ToolDock.Common.Logging;
 
 namespace ToolDock.Updater;
 
-internal sealed class ReleaseInstaller(HttpClient http, ToolDockPaths paths, ILog log)
+internal sealed class ReleaseInstaller(
+    HttpClient http,
+    ToolDockPaths paths,
+    ILogger<ReleaseInstaller> log)
 {
     public async Task<InstalledTool> InstallAsync(
         string name,
@@ -24,7 +27,7 @@ internal sealed class ReleaseInstaller(HttpClient http, ToolDockPaths paths, ILo
         {
             if (!Directory.Exists(finalDirectory))
             {
-                log.Info($"downloading {name} {version}");
+                log.LogInformation("Downloading {Tool} {Version}", name, version);
                 await DownloadAsync(release.DownloadUri, downloadPath, cancellationToken);
                 Directory.CreateDirectory(stageDirectory);
                 ZipFile.ExtractToDirectory(downloadPath, stageDirectory);

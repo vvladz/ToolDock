@@ -1,21 +1,21 @@
+using Microsoft.Extensions.Logging;
 using ToolDock.Common;
-using ToolDock.Common.Logging;
 using ToolDock.Starter.Processes;
 
 namespace ToolDock.Starter.Supervisor;
 
-internal sealed class ToolSupervisor(ToolDockPaths paths, ILog log) : IAsyncDisposable
+internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor> log) : IAsyncDisposable
 {
     private readonly Dictionary<string, ManagedToolProcess> _processes = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public async Task AutostartAsync(CancellationToken cancellationToken)
     {
-        log.Info("loading autostart configuration");
+        log.LogInformation("Loading autostart configuration");
         var catalog = await JsonFiles.ReadOptionalAsync<ToolCatalog>(paths.CatalogCacheFile, cancellationToken);
         if (catalog is null)
         {
-            log.Warning("catalog cache is absent; waiting for updater");
+            log.LogWarning("Catalog cache is absent; waiting for updater");
             return;
         }
 
@@ -30,11 +30,11 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILog log) : IAsyncDisp
             try
             {
                 var response = await ExecuteAsync("start", name, cancellationToken);
-                log.Info($"autostart {name}: {response}");
+                log.LogInformation("Autostart {Tool}: {Response}", name, response);
             }
             catch (Exception exception)
             {
-                log.Error($"autostart failed for {name}", exception);
+                log.LogError(exception, "Autostart failed for {Tool}", name);
             }
         }
     }
@@ -56,7 +56,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILog log) : IAsyncDisp
         }
         catch (Exception exception)
         {
-            log.Error($"{command} failed for {name}", exception);
+            log.LogError(exception, "{Command} failed for {Tool}", command, name);
             return $"ERROR {SingleLine(exception.Message)}";
         }
         finally
@@ -77,7 +77,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILog log) : IAsyncDisp
         }
         catch (Exception exception)
         {
-            log.Error("list failed", exception);
+            log.LogError(exception, "List failed");
             return $"ERROR {SingleLine(exception.Message)}";
         }
         finally
@@ -115,7 +115,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILog log) : IAsyncDisp
             return $"ERROR installed executable is missing: {installed.Path}";
         }
 
-        log.Info($"starting {name} {installed.Version}");
+        log.LogInformation("Starting {Tool} {Version}", name, installed.Version);
         var process = ManagedToolProcess.Start(name, executable, Path.Combine(paths.Logs, $"{name}.log"));
         _processes.Add(name, process);
         return $"OK running pid={process.ProcessId}";
@@ -128,7 +128,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILog log) : IAsyncDisp
             return "OK stopped";
         }
 
-        log.Info($"stopping {name}");
+        log.LogInformation("Stopping {Tool}", name);
         try
         {
             await process.StopAsync();
@@ -144,7 +144,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILog log) : IAsyncDisp
     {
         if (_processes.TryGetValue(name, out var process))
         {
-            log.Info($"restarting {name}");
+            log.LogInformation("Restarting {Tool}", name);
             _processes.Remove(name);
             try
             {

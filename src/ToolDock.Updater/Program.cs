@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using Microsoft.Extensions.Logging;
 using ToolDock.Common;
 using ToolDock.Common.Logging;
 
@@ -11,17 +12,19 @@ internal static class Program
         var attached = ConsoleHost.TryAttachParent();
         var paths = new ToolDockPaths();
         paths.EnsureDirectories();
-        using var log = new ToolDockLog(attached, Path.Combine(paths.Logs, "updater.log"));
+        using var loggerFactory = LoggerFactory.Create(builder =>
+            builder.AddProvider(new RotatingFileLoggerProvider(Path.Combine(paths.Logs, "updater.log"))));
+        var log = loggerFactory.CreateLogger("ToolDock.Updater");
 
         if (args is ["--help" or "-h"])
         {
-            log.Info("Usage: updater.exe");
+            Console.WriteLine("Usage: updater.exe");
             return 0;
         }
 
         if (args.Length != 0)
         {
-            log.Error("Updater does not accept arguments. Use --help for usage.");
+            Console.Error.WriteLine("Updater does not accept arguments. Use --help for usage.");
             return 2;
         }
 
@@ -42,16 +45,16 @@ internal static class Program
             {
                 if (attached)
                 {
-                    log.Warning("another updater instance is already running");
+                    Console.Error.WriteLine("another updater instance is already running");
                 }
                 return 0;
             }
 
-            return RunAsync(paths, log, CancellationToken.None).GetAwaiter().GetResult();
+            return RunAsync(paths, loggerFactory, CancellationToken.None).GetAwaiter().GetResult();
         }
         catch (Exception exception)
         {
-            log.Error("update failed", exception);
+            log.LogError(exception, "Update failed");
             return 1;
         }
         finally
@@ -63,20 +66,27 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunAsync(ToolDockPaths paths, ILog log, CancellationToken cancellationToken)
+    private static async Task<int> RunAsync(
+        ToolDockPaths paths,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
+        var log = loggerFactory.CreateLogger("ToolDock.Updater");
         var config = await JsonFiles.ReadRequiredAsync<ToolDockConfig>(paths.ConfigFile, cancellationToken);
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
         http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("ToolDock", "1.0"));
 
-        log.Info("fetching catalog");
+        log.LogInformation("Fetching catalog");
         var catalog = await new CatalogClient(http).FetchAsync(config.CatalogUrl, cancellationToken);
         await JsonFiles.WriteAtomicAsync(paths.CatalogCacheFile, catalog, cancellationToken);
 
         var state = await JsonFiles.ReadOptionalAsync<InstalledState>(paths.InstalledStateFile, cancellationToken)
             ?? new InstalledState();
         var releases = new GitHubReleaseClient(http);
-        var installer = new ReleaseInstaller(http, paths, log);
+        var installer = new ReleaseInstaller(
+            http,
+            paths,
+            loggerFactory.CreateLogger<ReleaseInstaller>());
         var starter = new StarterClient();
         var failed = false;
 
@@ -84,7 +94,7 @@ internal static class Program
         {
             if (!definition.Enabled)
             {
-                log.Info($"skipping disabled tool {name}");
+                log.LogInformation("Skipping disabled tool {Tool}", name);
                 continue;
             }
 
@@ -92,7 +102,11 @@ internal static class Program
             {
                 var installed = FindInstalled(state, name);
                 var release = await releases.GetLatestAsync(definition.Repo, definition.Asset, cancellationToken);
-                log.Info($"checking {name}: installed={installed?.Version ?? "none"} latest={release.Version}");
+                log.LogInformation(
+                    "Checking {Tool}: installed={InstalledVersion} latest={LatestVersion}",
+                    name,
+                    installed?.Version ?? "none",
+                    release.Version);
                 if (installed is not null && string.Equals(installed.Version, release.Version, StringComparison.Ordinal))
                 {
                     continue;
@@ -101,7 +115,7 @@ internal static class Program
                 var result = await installer.InstallAsync(name, definition, release, cancellationToken);
                 Upsert(state, name, result);
                 await JsonFiles.WriteAtomicAsync(paths.InstalledStateFile, state, cancellationToken);
-                log.Info($"installed {name} {result.Version}");
+                log.LogInformation("Installed {Tool} {Version}", name, result.Version);
 
                 var lifecycleCommand = installed is null
                     ? definition.Autostart ? "start" : null
@@ -114,7 +128,7 @@ internal static class Program
             catch (Exception exception)
             {
                 failed = true;
-                log.Error($"failed to update {name}", exception);
+                log.LogError(exception, "Failed to update {Tool}", name);
             }
         }
 
@@ -139,7 +153,7 @@ internal static class Program
         StarterClient starter,
         string command,
         string name,
-        ILog log,
+        ILogger log,
         CancellationToken cancellationToken)
     {
         try
@@ -147,16 +161,23 @@ internal static class Program
             var response = await starter.SendAsync($"{command} {name}", TimeSpan.FromSeconds(5), cancellationToken);
             if (response.StartsWith("OK", StringComparison.Ordinal))
             {
-                log.Info($"starter replied: {response}");
+                log.LogInformation("Starter replied: {Response}", response);
             }
             else
             {
-                log.Warning($"starter rejected {command} {name}: {response}");
+                log.LogWarning(
+                    "Starter rejected {Command} {Tool}: {Response}",
+                    command,
+                    name,
+                    response);
             }
         }
         catch (Exception exception)
         {
-            log.Warning($"installed {name}, but starter is unavailable: {exception.Message}");
+            log.LogWarning(
+                exception,
+                "Installed {Tool}, but starter is unavailable",
+                name);
         }
     }
 }

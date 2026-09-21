@@ -1,16 +1,16 @@
 using System.IO.Pipes;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using ToolDock.Common;
-using ToolDock.Common.Logging;
 using ToolDock.Starter.Supervisor;
 
 namespace ToolDock.Starter.Pipes;
 
-internal sealed class PipeServer(ToolSupervisor supervisor, ILog log)
+internal sealed class PipeServer(ToolSupervisor supervisor, ILogger<PipeServer> log)
 {
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        log.Info($"pipe server started: {StarterClient.PipeName}");
+        log.LogInformation("Pipe server started: {PipeName}", StarterClient.PipeName);
         while (!cancellationToken.IsCancellationRequested)
         {
             await using var pipe = CurrentUserPipe.CreateServer(StarterClient.PipeName);
@@ -26,7 +26,7 @@ internal sealed class PipeServer(ToolSupervisor supervisor, ILog log)
             }
             catch (Exception exception)
             {
-                log.Error("pipe request failed", exception);
+                log.LogError(exception, "Pipe request failed");
             }
         }
     }

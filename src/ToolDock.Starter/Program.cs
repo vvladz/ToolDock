@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using ToolDock.Common;
 using ToolDock.Common.Logging;
 using ToolDock.Starter.Pipes;
@@ -14,11 +15,13 @@ internal static class Program
         var attached = ConsoleHost.TryAttachParent();
         var paths = new ToolDockPaths();
         paths.EnsureDirectories();
-        using var log = new ToolDockLog(attached, Path.Combine(paths.Logs, "starter.log"));
+        using var loggerFactory = LoggerFactory.Create(builder =>
+            builder.AddProvider(new RotatingFileLoggerProvider(Path.Combine(paths.Logs, "starter.log"))));
+        var log = loggerFactory.CreateLogger("ToolDock.Starter");
 
         if (args is ["--help" or "-h"])
         {
-            log.Info(Usage);
+            Console.WriteLine(Usage);
             return 0;
         }
 
@@ -44,17 +47,17 @@ internal static class Program
             {
                 if (attached)
                 {
-                    log.Warning("starter is already running");
+                    Console.Error.WriteLine("starter is already running");
                 }
                 return 0;
             }
 
-            log.Info("starter initialized");
-            return RunServerAsync(paths, log, attached).GetAwaiter().GetResult();
+            log.LogInformation("Starter initialized");
+            return RunServerAsync(paths, loggerFactory, attached).GetAwaiter().GetResult();
         }
         catch (Exception exception)
         {
-            log.Error("starter failed", exception);
+            log.LogError(exception, "Starter failed");
             return 1;
         }
         finally
@@ -66,7 +69,7 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunClientAsync(string[] args, ILog log)
+    private static async Task<int> RunClientAsync(string[] args, ILogger log)
     {
         string request;
         if (args is ["list"])
@@ -80,7 +83,7 @@ internal static class Program
         }
         else
         {
-            log.Error(Usage);
+            Console.Error.WriteLine(Usage);
             return 2;
         }
 
@@ -95,21 +98,24 @@ internal static class Program
                 TimeSpan.FromSeconds(5));
             if (response.StartsWith("OK", StringComparison.Ordinal))
             {
-                log.Info(response);
+                Console.WriteLine(response);
                 return 0;
             }
 
-            log.Error(response);
+            Console.Error.WriteLine(response);
             return 1;
         }
         catch (Exception exception)
         {
-            log.Error("starter is unavailable", exception);
+            Console.Error.WriteLine($"starter is unavailable: {exception.Message}");
             return 1;
         }
     }
 
-    private static async Task<int> RunServerAsync(ToolDockPaths paths, ILog log, bool attached)
+    private static async Task<int> RunServerAsync(
+        ToolDockPaths paths,
+        ILoggerFactory loggerFactory,
+        bool attached)
     {
         using var cancellation = new CancellationTokenSource();
         if (attached)
@@ -121,9 +127,11 @@ internal static class Program
             };
         }
 
-        await using var supervisor = new ToolSupervisor(paths, log);
+        await using var supervisor = new ToolSupervisor(
+            paths,
+            loggerFactory.CreateLogger<ToolSupervisor>());
         await supervisor.AutostartAsync(cancellation.Token);
-        var server = new PipeServer(supervisor, log);
+        var server = new PipeServer(supervisor, loggerFactory.CreateLogger<PipeServer>());
         await server.RunAsync(cancellation.Token);
         return 0;
     }
