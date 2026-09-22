@@ -60,7 +60,7 @@ jobs:
         shell: pwsh
         run: tests/client.ps1 -ClientPath artifacts/client/ToolDock.Client.exe
 
-      - name: Test process supervision
+      - name: Test process supervision, values, secrets, and commands
         shell: pwsh
         run: tests/smoke.ps1 -StarterPath artifacts/starter/ToolDock.Starter.exe -ClientPath artifacts/client/ToolDock.Client.exe -ToolDirectory artifacts/smoke-tool
 

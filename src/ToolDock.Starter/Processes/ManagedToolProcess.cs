@@ -42,13 +42,14 @@ internal sealed class ManagedToolProcess : IAsyncDisposable
         string name,
         string executable,
         IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string> environment,
         string logPath)
     {
         var job = new JobObject();
         var log = new RotatingFileWriter(logPath);
         try
         {
-            var launched = NativeProcessLauncher.StartSuspendedInJob(executable, arguments, job);
+            var launched = NativeProcessLauncher.StartSuspendedInJob(executable, arguments, environment, job);
             return new ManagedToolProcess(name, job, launched, log);
         }
         catch

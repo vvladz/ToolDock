@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using ToolDock.Common;
@@ -13,6 +14,12 @@ internal static class Program
           tdctl list
           tdctl start|stop|restart|status <daemon>
           tdctl update
+          tdctl variable set <name> <value>
+          tdctl variable get|remove <name>
+          tdctl variable list|status
+          tdctl secret set <name> [--stdin]
+          tdctl secret remove <name>
+          tdctl secret list|status
           tdctl logs <ToolDock.Starter|ToolDock.Updater|daemon> [--lines <count>] [--follow]
         """;
 
@@ -27,6 +34,18 @@ internal static class Program
                 [var command, var name] when command is "start" or "stop" or "restart" or "status"
                     => RunDaemonCommandAsync(command, name).GetAwaiter().GetResult(),
                 ["update"] => RunUpdate(),
+                ["variable", "set", var name, var value] => SetVariable(name, value),
+                ["variable", "get", var name] => GetVariable(name),
+                ["variable", "remove", var name] => RemoveVariable(name),
+                ["variable", "list"] => ListVariables(),
+                ["variable", "status"] => ShowValueStatus(secret: false),
+                ["secret", "set", var name] => SetSecret(name, readFromStandardInput: false),
+                ["secret", "set", var name, "--stdin"] => SetSecret(name, readFromStandardInput: true),
+                ["secret", "remove", var name] => RemoveSecret(name),
+                ["secret", "list"] => ListSecrets(),
+                ["secret", "status"] => ShowValueStatus(secret: true),
+                ["exec", var name, "--", .. var commandArguments]
+                    => RunCommand(name, commandArguments),
                 ["logs", .. var logArguments] => ShowLogsAsync(logArguments).GetAwaiter().GetResult(),
                 _ => UsageError()
             };
@@ -117,6 +136,235 @@ internal static class Program
     {
         Console.Error.WriteLine(message);
         return exitCode;
+    }
+
+    private static int SetVariable(string name, string value)
+    {
+        var paths = CreatePaths();
+        new VariableStore(paths).Set(name, value);
+        Console.WriteLine($"Variable set: {name}");
+        return 0;
+    }
+
+    private static int GetVariable(string name)
+    {
+        var store = new VariableStore(CreatePaths());
+        if (!store.TryGet(name, out var value))
+        {
+            Console.Error.WriteLine($"Variable is not set: {name}");
+            return 1;
+        }
+
+        Console.WriteLine(value);
+        return 0;
+    }
+
+    private static int RemoveVariable(string name)
+    {
+        var removed = new VariableStore(CreatePaths()).Remove(name);
+        Console.WriteLine(removed ? $"Variable removed: {name}" : $"Variable is not set: {name}");
+        return 0;
+    }
+
+    private static int ListVariables()
+    {
+        foreach (var name in new VariableStore(CreatePaths()).List())
+        {
+            Console.WriteLine(name);
+        }
+        return 0;
+    }
+
+    private static int SetSecret(string name, bool readFromStandardInput)
+    {
+        var value = ReadSecret(readFromStandardInput);
+        new SecretStore(CreatePaths()).Set(name, value);
+        Console.WriteLine($"Secret set: {name}");
+        return 0;
+    }
+
+    private static int RemoveSecret(string name)
+    {
+        var removed = new SecretStore(CreatePaths()).Remove(name);
+        Console.WriteLine(removed ? $"Secret removed: {name}" : $"Secret is not set: {name}");
+        return 0;
+    }
+
+    private static int ListSecrets()
+    {
+        foreach (var name in new SecretStore(CreatePaths()).List())
+        {
+            Console.WriteLine(name);
+        }
+        return 0;
+    }
+
+    private static int ShowValueStatus(bool secret)
+    {
+        var paths = CreatePaths();
+        var stored = new HashSet<string>(
+            secret ? new SecretStore(paths).List() : new VariableStore(paths).List(),
+            StringComparer.OrdinalIgnoreCase);
+        var referenced = ReadReferences(paths, secret);
+        var names = new HashSet<string>(stored, StringComparer.OrdinalIgnoreCase);
+        names.UnionWith(referenced);
+
+        foreach (var name in names.Order(StringComparer.OrdinalIgnoreCase))
+        {
+            var status = referenced.Contains(name)
+                ? stored.Contains(name) ? "set" : "missing"
+                : "unused";
+            Console.WriteLine($"{name} {status}");
+        }
+        return 0;
+    }
+
+    private static HashSet<string> ReadReferences(ToolDockPaths paths, bool secret)
+    {
+        var catalog = JsonFiles.ReadOptionalAsync<ToolCatalog>(paths.CatalogCacheFile)
+            .GetAwaiter().GetResult();
+        if (catalog is null)
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        Validation.ValidateCatalog(catalog);
+        var references = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var package in catalog.Tools.Values)
+        {
+            var environments = package.Commands.Values.Select(command => command.Environment)
+                .Concat(package.Daemons.Values.Select(daemon => daemon.Environment));
+            foreach (var environment in environments)
+            {
+                foreach (var value in environment.Values)
+                {
+                    var reference = secret ? value.Secret : value.Variable;
+                    if (reference is not null)
+                    {
+                        references.Add(reference);
+                    }
+                }
+            }
+        }
+        return references;
+    }
+
+    private static string ReadSecret(bool readFromStandardInput)
+    {
+        if (readFromStandardInput)
+        {
+            return Console.In.ReadLine()
+                ?? throw new InvalidDataException("No secret was provided on standard input.");
+        }
+
+        if (Console.IsInputRedirected)
+        {
+            throw new InvalidOperationException("Interactive secret input requires a console; use --stdin for redirected input.");
+        }
+
+        Console.Write("Enter secret: ");
+        var value = new StringBuilder();
+        while (true)
+        {
+            var key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter)
+            {
+                Console.WriteLine();
+                return value.ToString();
+            }
+            if (key.Key == ConsoleKey.Backspace)
+            {
+                if (value.Length != 0)
+                {
+                    value.Length--;
+                    Console.Write("\b \b");
+                }
+                continue;
+            }
+            if (!char.IsControl(key.KeyChar))
+            {
+                value.Append(key.KeyChar);
+                Console.Write('*');
+            }
+        }
+    }
+
+    private static int RunCommand(string name, string[] arguments)
+    {
+        Validation.ValidateToolName(name);
+        var paths = CreatePaths();
+        var catalog = JsonFiles.ReadRequiredAsync<ToolCatalog>(paths.CatalogCacheFile)
+            .GetAwaiter().GetResult();
+        Validation.ValidateCatalog(catalog);
+        var (packageName, package, command) = Validation.FindCommand(catalog, name);
+        if (!package.Enabled)
+        {
+            throw new InvalidOperationException($"Package is disabled: {packageName}");
+        }
+
+        var state = JsonFiles.ReadRequiredAsync<InstalledState>(paths.InstalledStateFile)
+            .GetAwaiter().GetResult();
+        var installed = Validation.FindInstalled(state, packageName);
+        var packageRoot = paths.ResolveUnderRoot(
+            installed.Root ?? Path.Combine("tools", packageName, installed.Version));
+        var executable = ResolveUnder(
+            packageRoot,
+            Validation.ValidateExecutablePath($"command {name}", command.Executable));
+        if (!File.Exists(executable))
+        {
+            throw new FileNotFoundException(
+                $"Installed executable is missing: {Path.GetRelativePath(paths.Root, executable)}",
+                executable);
+        }
+
+        var environment = new ProcessEnvironmentBuilder(paths).Build(command.Environment);
+        using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(
+            new RotatingFileLoggerProvider(Path.Combine(paths.Logs, "ToolDock.Client.log"))));
+        var log = loggerFactory.CreateLogger("ToolDock.Client");
+        log.LogInformation("Executing {Command} from {Package} {Version}", name, packageName, installed.Version);
+        foreach (var entry in environment.LogEntries)
+        {
+            log.LogInformation("{EnvironmentEntry}", entry);
+        }
+
+        var startInfo = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false,
+            WorkingDirectory = Environment.CurrentDirectory
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+        startInfo.Environment.Clear();
+        foreach (var (environmentName, value) in environment.Values)
+        {
+            startInfo.Environment[environmentName] = value;
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException($"Could not start command: {name}");
+        process.WaitForExit();
+        log.LogInformation("Command {Command} exited with code {ExitCode}", name, process.ExitCode);
+        return process.ExitCode;
+    }
+
+    private static ToolDockPaths CreatePaths()
+    {
+        var paths = new ToolDockPaths();
+        paths.EnsureDirectories();
+        return paths;
+    }
+
+    private static string ResolveUnder(string root, string relativePath)
+    {
+        var resolved = Path.GetFullPath(relativePath, root);
+        var prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!resolved.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Executable path escapes the installed version directory.");
+        }
+        return resolved;
     }
 
     private static async Task<int> ShowLogsAsync(string[] args)

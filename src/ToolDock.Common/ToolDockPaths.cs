@@ -15,6 +15,9 @@ public sealed class ToolDockPaths
     public string Logs => Path.Combine(Root, "logs");
     public string Temp => Path.Combine(Root, "temp");
     public string ConfigFile => Path.Combine(Root, "config.json");
+    public string VariablesFile => Path.Combine(Root, "variables.json");
+    public string Secrets => Path.Combine(Root, "secrets");
+    public string SecretsFile => Path.Combine(Secrets, "secrets.dat");
     public string InstalledStateFile => Path.Combine(State, "installed.json");
     public string CatalogCacheFile => Path.Combine(State, "catalog.json");
 
@@ -25,6 +28,7 @@ public sealed class ToolDockPaths
         Directory.CreateDirectory(Tools);
         Directory.CreateDirectory(State);
         Directory.CreateDirectory(Logs);
+        Directory.CreateDirectory(Secrets);
         Directory.CreateDirectory(Temp);
     }
 

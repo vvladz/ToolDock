@@ -10,6 +10,9 @@ public static partial class Validation
     [GeneratedRegex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", RegexOptions.CultureInvariant)]
     private static partial Regex RepositoryPattern();
 
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]{0,127}$", RegexOptions.CultureInvariant)]
+    private static partial Regex EnvironmentNamePattern();
+
     public static void ValidateCatalog(ToolCatalog catalog)
     {
         var packageNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -40,7 +43,7 @@ public static partial class Validation
                 throw new InvalidDataException($"Package {name} has no commands or daemons.");
             }
 
-            foreach (var (commandName, executable) in definition.Commands)
+            foreach (var (commandName, command) in definition.Commands)
             {
                 ValidateToolName(commandName);
                 if (!commandNames.Add(commandName))
@@ -48,7 +51,8 @@ public static partial class Validation
                     throw new InvalidDataException($"Duplicate command name differs only by case: {commandName}");
                 }
 
-                _ = ValidateExecutablePath($"command {commandName}", executable);
+                _ = ValidateExecutablePath($"command {commandName}", command.Executable);
+                ValidateEnvironment($"command {commandName}", command.Environment);
             }
 
             foreach (var (daemonName, daemon) in definition.Daemons)
@@ -64,7 +68,24 @@ public static partial class Validation
                 {
                     throw new InvalidDataException($"Daemon {daemonName} has an invalid argument.");
                 }
+                ValidateEnvironment($"daemon {daemonName}", daemon.Environment);
             }
+        }
+    }
+
+    public static void ValidateValueName(string name)
+    {
+        if (!ToolNamePattern().IsMatch(name) || name is "." or "..")
+        {
+            throw new InvalidDataException($"Invalid value name: {name}");
+        }
+    }
+
+    public static void ValidateEnvironmentValue(string value)
+    {
+        if (value.IndexOfAny(['\0', '\r', '\n']) >= 0)
+        {
+            throw new InvalidDataException("Environment values cannot contain NUL or newline characters.");
         }
     }
 
@@ -129,7 +150,53 @@ public static partial class Validation
         throw new KeyNotFoundException($"Unknown daemon: {name}");
     }
 
+    public static (string PackageName, ToolDefinition Package, CommandDefinition Command) FindCommand(
+        ToolCatalog catalog,
+        string name)
+    {
+        foreach (var (packageName, package) in catalog.Tools)
+        {
+            var command = package.Commands
+                .FirstOrDefault(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase));
+            if (command.Value is not null)
+            {
+                return (packageName, package, command.Value);
+            }
+        }
+
+        throw new KeyNotFoundException($"Unknown command: {name}");
+    }
+
     public static InstalledTool FindInstalled(InstalledState state, string name)
         => state.Tools.FirstOrDefault(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)).Value
            ?? throw new KeyNotFoundException($"Package is not installed: {name}");
+
+    private static void ValidateEnvironment(string owner, Dictionary<string, EnvironmentValue> environment)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in environment)
+        {
+            if (!EnvironmentNamePattern().IsMatch(name) || !names.Add(name))
+            {
+                throw new InvalidDataException($"Invalid or duplicate environment name for {owner}: {name}");
+            }
+
+            if (value.Literal is not null)
+            {
+                ValidateEnvironmentValue(value.Literal);
+            }
+            else if (value.Variable is not null)
+            {
+                ValidateValueName(value.Variable);
+            }
+            else if (value.Secret is not null)
+            {
+                ValidateValueName(value.Secret);
+            }
+            else
+            {
+                throw new InvalidDataException($"Environment value for {owner}/{name} has no source.");
+            }
+        }
+    }
 }

@@ -59,14 +59,27 @@ A catalog entry describes one release package and its command and daemon entry p
       "asset": "farshell-win-x64.zip",
       "enabled": true,
       "commands": {
-        "farshell": "farshell.exe"
+        "farshell": {
+          "executable": "farshell.exe",
+          "environment": {
+            "FARSHELL_SERVER": {
+              "variable": "farshell.server"
+            },
+            "OPENAI_API_KEY": {
+              "secret": "openai.api-key"
+            }
+          }
+        }
       },
       "daemons": {
         "farshell": {
           "executable": "farshelld.exe",
           "arguments": [],
           "autostart": true,
-          "restartOnUpdate": true
+          "restartOnUpdate": true,
+          "environment": {
+            "LOG_LEVEL": "info"
+          }
         }
       }
     }
@@ -78,7 +91,9 @@ One package may contain any combination of CLI commands and background daemons. 
 
 ```json
 "commands": {
-  "example": "example.exe"
+  "example": {
+    "executable": "example.exe"
+  }
 },
 "daemons": {
   "example": {
@@ -97,12 +112,13 @@ Fields:
 | `repo` | GitHub repository in `owner/name` form |
 | `asset` | Exact ZIP asset name in the latest release |
 | `enabled` | Whether ToolDock may update and start the package |
-| `commands` | Globally unique command names mapped to executable paths inside the ZIP |
+| `commands` | Globally unique command names mapped to command definitions |
 | `daemons` | Globally unique supervised-daemon names and their launch settings |
-| `executable` | Relative executable path for a daemon |
+| `executable` | Relative executable path inside the ZIP |
 | `arguments` | Optional daemon arguments |
 | `autostart` | Start the daemon after sign-in or its first installation |
 | `restartOnUpdate` | Restart the daemon after its package changes, if it is currently running |
+| `environment` | Optional process environment made from literals, variables, and secret references |
 
 Versions are installed side by side and exposed through a `current` directory junction:
 
@@ -113,7 +129,52 @@ Versions are installed side by side and exposed through a `current` directory ju
 └── current\        directory junction → v1.1.0
 ```
 
-Each command gets a shim in `%LOCALAPPDATA%\ToolDock\bin`. Daemons are started from the exact installed-version directory recorded in ToolDock state.
+Each command gets a shim in `%LOCALAPPDATA%\ToolDock\bin`. The shim delegates execution to `ToolDock.Client.exe`, which resolves the installed executable and its environment, preserves the calling terminal streams, and returns the child exit code. Daemons are started from the exact installed-version directory recorded in ToolDock state.
+
+## Variables and secrets
+
+Environment entries support three forms:
+
+```json
+{
+  "environment": {
+    "LOG_LEVEL": "info",
+    "SERVICE_URL": {
+      "variable": "service.url"
+    },
+    "ACCESS_TOKEN": {
+      "secret": "service.token"
+    }
+  }
+}
+```
+
+- literals live in the public catalog;
+- variables are user-scoped named plaintext values in `%LOCALAPPDATA%\ToolDock\variables.json`;
+- secrets are user-scoped named values protected with Windows DPAPI `CurrentUser` in `%LOCALAPPDATA%\ToolDock\secrets\secrets.dat`.
+
+Variables and secrets are global within the current user's ToolDock installation, so multiple commands or daemons can reference the same name. They are not added to the global Windows environment; ToolDock injects them only into configured child processes.
+
+Manage variables with:
+
+```powershell
+tdctl variable set service.url https://service.example
+tdctl variable get service.url
+tdctl variable list
+tdctl variable status
+tdctl variable remove service.url
+```
+
+Manage secrets with:
+
+```powershell
+tdctl secret set service.token
+tdctl secret list
+tdctl secret status
+tdctl secret remove service.token
+```
+
+Secret input is hidden and is never accepted as a command-line value. `tdctl secret set <name> --stdin` is available for controlled automation. There is no normal secret `get` operation. A missing variable or secret prevents process creation. Changes take effect the next time a command starts or a daemon is started or restarted.
 
 ## Control client
 
@@ -124,6 +185,8 @@ tdctl start farshell
 tdctl restart farshell
 tdctl stop farshell
 tdctl update
+tdctl variable status
+tdctl secret status
 ```
 
 Process commands are sent to `ToolDock.Starter.exe` over a current-user-only Named Pipe. `tdctl update` runs the same update coordinator as the scheduled updater. A cross-process named mutex prevents both update hosts from running concurrently.
@@ -136,6 +199,7 @@ Logs are stored in `%LOCALAPPDATA%\ToolDock\logs`:
 
 - `ToolDock.Starter.log`: supervisor and Named Pipe diagnostics;
 - `ToolDock.Updater.log`: scheduled and interactive update diagnostics;
+- `ToolDock.Client.log`: managed-command execution and environment diagnostics;
 - `<daemon>.log`: captured stdout, stderr, and lifecycle events.
 
 View them through the client:
@@ -146,7 +210,7 @@ tdctl logs farshell --lines 200
 tdctl logs farshell --follow
 ```
 
-Daemon diagnostics use `Microsoft.Extensions.Logging`. Scheduled updates write to `ToolDock.Updater.log`; `tdctl update` writes the same operation to `ToolDock.Updater.log` and the terminal. The client does not maintain a separate log of control commands.
+Daemon diagnostics use `Microsoft.Extensions.Logging`. Scheduled updates write to `ToolDock.Updater.log`; `tdctl update` writes the same operation to `ToolDock.Updater.log` and the terminal. Process launches log every catalog-configured environment entry. Literals use `ENV_NAME: value`, variables use `ENV_NAME: variable.name -> value`, and secrets use `ENV_NAME: secret.name -> *******`. Inherited environment entries are not logged.
 
 Logs rotate at 10 MB with five archives retained.
 

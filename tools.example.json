@@ -5,13 +5,29 @@
       "asset": "farshell-win-x64.zip",
       "enabled": true,
       "commands": {
-        "farshell": "farshell.exe"
+        "farshell": {
+          "executable": "farshell.exe",
+          "environment": {
+            "FARSHELL_SERVER": {
+              "variable": "farshell.server"
+            },
+            "OPENAI_API_KEY": {
+              "secret": "openai.api-key"
+            }
+          }
+        }
       },
       "daemons": {
         "farshell": {
           "executable": "farshelld.exe",
           "autostart": true,
-          "restartOnUpdate": true
+          "restartOnUpdate": true,
+          "environment": {
+            "LOG_LEVEL": "info",
+            "OPENAI_API_KEY": {
+              "secret": "openai.api-key"
+            }
+          }
         }
       }
     },
@@ -20,7 +36,9 @@
       "asset": "devproxy-win-x64.zip",
       "enabled": true,
       "commands": {
-        "devproxy": "app/devproxy.exe"
+        "devproxy": {
+          "executable": "app/devproxy.exe"
+        }
       },
       "daemons": {}
     }

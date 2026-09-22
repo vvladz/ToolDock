@@ -190,15 +190,22 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
             return $"ERROR installed executable is missing: {Path.GetRelativePath(paths.Root, executable)}";
         }
 
+        var environment = new ProcessEnvironmentBuilder(paths).Build(daemon.Environment);
+
         log.LogInformation(
             "Starting {Daemon} from {Package} {Version}",
             name,
             packageName,
             installed.Version);
+        foreach (var entry in environment.LogEntries)
+        {
+            log.LogInformation("{EnvironmentEntry}", entry);
+        }
         var process = ManagedToolProcess.Start(
             name,
             executable,
             daemon.Arguments,
+            environment.Values,
             Path.Combine(paths.Logs, $"{name}.log"));
         _processes.Add(name, process);
         return $"OK running pid={process.ProcessId}";

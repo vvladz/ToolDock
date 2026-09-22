@@ -20,6 +20,8 @@ $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("ToolDock-smoke-" + [Guid]::Ne
 $versionRoot = Join-Path $testRoot 'tools\smoke\v1'
 $stateRoot = Join-Path $testRoot 'state'
 $logPath = Join-Path $testRoot 'logs\smoke.log'
+$starterLogPath = Join-Path $testRoot 'logs\ToolDock.Starter.log'
+$clientLogPath = Join-Path $testRoot 'logs\ToolDock.Client.log'
 $previousHome = $env:TOOLDOCK_HOME
 $starterProcess = $null
 
@@ -64,8 +66,8 @@ function Invoke-Client([string] $Command) {
 
 try {
     $catalogCheck = @(& (Join-Path $toolSource 'smoke-tool.exe') --verify-catalog-schema)
-    if ($LASTEXITCODE -ne 0 -or ($catalogCheck -join '') -ne 'legacy catalog rejected') {
-        throw "Legacy catalog validation failed: $($catalogCheck -join ',')"
+    if ($LASTEXITCODE -ne 0 -or ($catalogCheck -join '') -ne 'catalog schema verified') {
+        throw "Catalog validation failed: $($catalogCheck -join ',')"
     }
 
     New-Item -ItemType Directory -Path $versionRoot -Force | Out-Null
@@ -78,13 +80,27 @@ try {
                 repo = 'example/smoke'
                 asset = 'smoke.zip'
                 enabled = $true
-                commands = [ordered]@{}
+                commands = [ordered]@{
+                    'smoke-command' = [ordered]@{
+                        executable = 'smoke-tool.exe'
+                        environment = [ordered]@{
+                            LITERAL_VALUE = 'literal-value'
+                            VARIABLE_VALUE = [ordered]@{ variable = 'smoke.value' }
+                            SECRET_VALUE = [ordered]@{ secret = 'smoke.secret' }
+                        }
+                    }
+                }
                 daemons = [ordered]@{
                     smoke = [ordered]@{
                         executable = 'smoke-tool.exe'
                         arguments = @('--daemon', 'value with space', 'quote"here')
                         autostart = $true
                         restartOnUpdate = $true
+                        environment = [ordered]@{
+                            LITERAL_VALUE = 'literal-value'
+                            VARIABLE_VALUE = [ordered]@{ variable = 'smoke.value' }
+                            SECRET_VALUE = [ordered]@{ secret = 'smoke.secret' }
+                        }
                     }
                 }
             }
@@ -96,12 +112,56 @@ try {
                 version = 'v1'
                 root = 'tools\smoke\v1'
                 entryPointsTracked = $true
-                commands = @()
+                commands = @('smoke-command')
             }
         }
     })
 
     $env:TOOLDOCK_HOME = $testRoot
+
+    $variableSet = @(& $client variable set smoke.value variable-value 2>&1)
+    if ($LASTEXITCODE -ne 0 -or ($variableSet -join '') -ne 'Variable set: smoke.value') {
+        throw "Variable set failed: $($variableSet -join ',')"
+    }
+    if ((@(& $client variable get smoke.value) -join '') -ne 'variable-value') {
+        throw 'Variable get did not return the stored value.'
+    }
+
+    $secretValue = 'secret-value'
+    $secretSet = @($secretValue | & $client secret set smoke.secret --stdin 2>&1)
+    if ($LASTEXITCODE -ne 0 -or ($secretSet -join '') -ne 'Secret set: smoke.secret') {
+        throw "Secret set failed: $($secretSet -join ',')"
+    }
+    $secretFile = Join-Path $testRoot 'secrets\secrets.dat'
+    if ((Get-Content -LiteralPath $secretFile -Raw).Contains($secretValue)) {
+        throw 'Secret store contains the plaintext secret.'
+    }
+    if ((@(& $client variable status) -join '') -ne 'smoke.value set') {
+        throw 'Variable status did not report the referenced value as set.'
+    }
+    if ((@(& $client secret status) -join '') -ne 'smoke.secret set') {
+        throw 'Secret status did not report the referenced value as set.'
+    }
+
+    $commandOutput = @(& $client exec smoke-command -- --command 'value with space' 'quote"here' 2>&1)
+    if ($LASTEXITCODE -ne 23) {
+        throw "Command exit code was not preserved: $LASTEXITCODE"
+    }
+    if (-not ($commandOutput -match 'command args=value with space\|quote"here') -or
+        -not ($commandOutput -match 'command environment=ok') -or
+        -not ($commandOutput -match 'command stderr ready')) {
+        throw "Command execution did not preserve its contract: $($commandOutput -join ',')"
+    }
+    $clientLog = Get-Content -LiteralPath $clientLogPath -Raw
+    if ($clientLog -notmatch 'LITERAL_VALUE: literal-value' -or
+        $clientLog -notmatch 'VARIABLE_VALUE: smoke.value -> variable-value' -or
+        $clientLog -notmatch 'SECRET_VALUE: smoke.secret -> \*\*\*\*\*\*\*') {
+        throw 'Client environment log does not contain the expected values and placeholder.'
+    }
+    if ($clientLog.Contains($secretValue)) {
+        throw 'Client log contains the resolved secret.'
+    }
+
     $starterProcess = Start-Process -FilePath $starter -PassThru
 
     $status = $null
@@ -149,6 +209,18 @@ try {
     if (-not (Select-String -LiteralPath $logPath -SimpleMatch 'OUT args=--daemon|value with space|quote"here' -Quiet)) {
         throw 'Managed daemon arguments were not preserved.'
     }
+    if (-not (Select-String -LiteralPath $logPath -SimpleMatch 'OUT environment=ok' -Quiet)) {
+        throw 'Managed daemon environment was not resolved.'
+    }
+    $starterLog = Get-Content -LiteralPath $starterLogPath -Raw
+    if ($starterLog -notmatch 'LITERAL_VALUE: literal-value' -or
+        $starterLog -notmatch 'VARIABLE_VALUE: smoke.value -> variable-value' -or
+        $starterLog -notmatch 'SECRET_VALUE: smoke.secret -> \*\*\*\*\*\*\*') {
+        throw 'Starter environment log does not contain the expected values and placeholder.'
+    }
+    if ($starterLog.Contains($secretValue)) {
+        throw 'Starter log contains the resolved secret.'
+    }
 
     $reconcile = Invoke-Starter 'package-updated smoke updated'
     if ($reconcile -ne 'OK restarted=smoke') {
@@ -189,7 +261,16 @@ try {
         throw 'Stopped status was not reported.'
     }
 
-    'starter smoke test: OK'
+    $secretRemove = @(& $client secret remove smoke.secret 2>&1)
+    if ($LASTEXITCODE -ne 0 -or ($secretRemove -join '') -ne 'Secret removed: smoke.secret') {
+        throw 'Secret remove failed.'
+    }
+    $missingOutput = @(& $client start smoke 2>&1)
+    if ($LASTEXITCODE -ne 1 -or -not ($missingOutput -match 'missing secret: smoke.secret')) {
+        throw "Missing secret did not prevent daemon startup: $($missingOutput -join ',')"
+    }
+
+    'starter, values, secrets, and command smoke test: OK'
 }
 catch {
     $logFiles = Get-ChildItem -LiteralPath (Join-Path $testRoot 'logs') -File -ErrorAction SilentlyContinue

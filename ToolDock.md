@@ -5,6 +5,7 @@ ToolDock is a user-scoped Windows package updater and process supervisor. It ins
 ## Invariants
 
 - Managed packages remain ordinary standalone ZIP archives and executables.
+- Managed packages consume ordinary environment variables and do not know about ToolDock value storage or DPAPI.
 - GitHub polling and installation stay outside managed tools.
 - Only the starter owns managed processes and their Job Objects.
 - Only one update operation may run in the user session at a time.
@@ -51,7 +52,12 @@ tdctl start/status ──pipe──► ToolDock.Starter.exe
                                  │
                      ┌───────────┼───────────┐
                      ▼           ▼           ▼
-                  Job[a]      Job[b]      Job[c]
+                   Job[a]      Job[b]      Job[c]
+
+managed command shim ──────► ToolDock.Client.exe exec
+                                  │
+                                  ▼
+                           command process
 ```
 
 ### Starter
@@ -113,13 +119,15 @@ The scheduled updater and interactive client differ only at the host boundary:
 
 ### Client
 
-The client has three kinds of operation:
+The client has five kinds of operation:
 
 - process control goes through the starter Named Pipe;
 - `update` directly runs the shared update coordinator;
+- `exec` resolves and runs a catalog command with its configured environment;
+- `variable` and `secret` manage user-scoped values;
 - `logs` reads rotating files with read/write/delete sharing and optionally follows them.
 
-The client does not own managed processes and does not have a `client.log`.
+The client does not own supervised daemon processes. Interactive command processes remain attached to it, inherit its terminal streams, and return their exit code. Command execution diagnostics are written to `ToolDock.Client.log` without changing child stdout or stderr.
 
 ## Catalog model
 
@@ -133,14 +141,25 @@ The top-level `tools` object maps package names to installation definitions:
       "asset": "package-win-x64.zip",
       "enabled": true,
       "commands": {
-        "command-name": "relative/path/command.exe"
+        "command-name": {
+          "executable": "relative/path/command.exe",
+          "environment": {
+            "MODE": "interactive",
+            "SERVER": { "variable": "service.server" },
+            "TOKEN": { "secret": "service.token" }
+          }
+        }
       },
       "daemons": {
         "daemon-name": {
           "executable": "relative/path/daemon.exe",
           "arguments": ["serve"],
           "autostart": true,
-          "restartOnUpdate": true
+          "restartOnUpdate": true,
+          "environment": {
+            "MODE": "daemon",
+            "TOKEN": { "secret": "service.token" }
+          }
         }
       }
     }
@@ -148,7 +167,17 @@ The top-level `tools` object maps package names to installation definitions:
 }
 ```
 
-Package names, command names, and daemon names are case-insensitively unique within their respective namespaces. Command and daemon executable paths must remain under the extracted package directory.
+Package names, command names, and daemon names are case-insensitively unique within their respective namespaces. Command and daemon executable paths must remain under the extracted package directory. Environment names use the conventional Windows identifier form and are case-insensitively unique within one process definition.
+
+An environment value is exactly one of:
+
+```text
+literal string                 public value stored in the catalog
+{ "variable": "name" }       user-scoped plaintext value reference
+{ "secret": "name" }         user-scoped DPAPI-protected value reference
+```
+
+Variables and secrets use separate current-user stores and are resolved immediately before process creation. A missing reference fails the launch before any child process is created.
 
 ## Installation layout
 
@@ -170,8 +199,12 @@ Package names, command names, and daemon names are case-insensitively unique wit
 ├── logs\
 │   ├── ToolDock.Starter.log
 │   ├── ToolDock.Updater.log
+│   ├── ToolDock.Client.log
 │   └── <daemon>.log
+├── secrets\
+│   └── secrets.dat
 ├── temp\
+├── variables.json
 └── config.json
 ```
 
@@ -179,7 +212,9 @@ Installed state records the package version directory, not a single executable. 
 
 ## Update and restart semantics
 
-An updated command begins using the new `current` junction on its next invocation. Existing command processes are not managed by ToolDock.
+An updated command begins using the installed version recorded in ToolDock state on its next invocation. Existing command processes are not managed by ToolDock.
+
+Variable and secret changes also take effect on the next process launch. ToolDock does not restart running daemons merely because a stored value changed.
 
 For daemons, the engine sends:
 
@@ -201,6 +236,8 @@ The updater never stops or starts managed processes directly. If the starter can
 Each daemon is created suspended, assigned to a dedicated Windows Job Object, and then resumed. The Job Object uses kill-on-close semantics. `stop` and `restart` therefore terminate the complete process tree rather than only the root process.
 
 Daemon arguments are encoded using Windows command-line quoting rules. The executable path is also passed separately as the `CreateProcess` application name.
+
+The starter builds a Unicode child environment block from its inherited environment plus the daemon's configured overrides. The client applies the same resolver to interactive command processes. Neither component modifies the user's global Windows environment.
 
 The starter captures stdout and stderr through inherited anonymous pipes. It drains them after Job Object termination before recording the final exit event.
 
@@ -231,6 +268,22 @@ status <daemon>
 Application diagnostics use `Microsoft.Extensions.Logging` with a ToolDock rotating-file provider. Structured message templates are retained at call sites without adding a third-party logging dependency.
 
 Managed daemon stdout/stderr is not application logging. It remains a raw transcript with `SYS`, `OUT`, and `ERR` markers so arbitrary child output is not interpreted as ToolDock diagnostic events.
+
+Every catalog-configured environment override is logged at process launch:
+
+```text
+ENV_NAME: value
+VAR_NAME: variable.name -> value
+SEC_NAME: secret.name -> *******
+```
+
+Inherited environment entries are not logged. Secret plaintext is never passed to the logger. Child output is not redacted; a managed application remains responsible for not printing credentials.
+
+## Value storage and DPAPI
+
+`variables.json` and `secrets.dat` are versioned, atomically replaced files. A session-local named mutex serializes writes from concurrent client processes. Variable values are plaintext and may be read with `tdctl variable get`.
+
+Each secret value is encrypted with Windows DPAPI using `DataProtectionScope.CurrentUser`. Secret names and ciphertext remain visible, but the plaintext is tied to the current Windows user. ToolDock exposes set, list, status, and remove operations, but no normal secret get/export operation. DPAPI protects stored data; it is not a security boundary against arbitrary malicious code already running as the same user.
 
 Log files rotate at 10 MB with five archives. Writers allow read and delete sharing so `tdctl logs --follow` can coexist with rotation.
 

@@ -22,7 +22,7 @@ internal sealed class ReleaseInstaller(
         var downloadPath = Path.Combine(paths.Temp, $"{name}-{Guid.NewGuid():N}.zip.part");
         var commands = definition.Commands;
         var daemons = definition.Daemons;
-        var executables = commands.Values
+        var executables = commands.Values.Select(command => command.Executable)
             .Concat(daemons.Values.Select(daemon => daemon.Executable))
             .Select(path => Validation.ValidateExecutablePath(name, path))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -46,9 +46,9 @@ internal sealed class ReleaseInstaller(
             ValidateExecutables(name, finalDirectory, executables);
 
             await Junction.SwitchAsync(Path.Combine(toolRoot, "current"), finalDirectory, cancellationToken);
-            foreach (var (commandName, executable) in commands)
+            foreach (var commandName in commands.Keys)
             {
-                await WriteShimAsync(name, commandName, executable, cancellationToken);
+                await WriteShimAsync(commandName, cancellationToken);
             }
 
             return new InstalledTool
@@ -90,13 +90,11 @@ internal sealed class ReleaseInstaller(
     }
 
     private async Task WriteShimAsync(
-        string packageName,
         string commandName,
-        string executableRelativePath,
         CancellationToken cancellationToken)
     {
-        var target = Path.Combine("..", "tools", packageName, "current", executableRelativePath);
-        var contents = $"@echo off\r\n\"%~dp0{target}\" %*\r\n";
+        var contents =
+            $"@echo off\r\n\"%~dp0ToolDock.Client.exe\" exec {commandName} -- %*\r\nexit /b %ERRORLEVEL%\r\n";
         await AtomicFile.WriteTextAsync(Path.Combine(paths.Bin, $"{commandName}.cmd"), contents, cancellationToken);
     }
 

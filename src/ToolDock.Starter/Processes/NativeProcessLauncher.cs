@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
@@ -10,6 +11,7 @@ namespace ToolDock.Starter.Processes;
 internal static class NativeProcessLauncher
 {
     private const uint CreateSuspended = 0x00000004;
+    private const uint CreateUnicodeEnvironment = 0x00000400;
     private const uint CreateNoWindow = 0x08000000;
     private const uint StartfUseStdHandles = 0x00000100;
     private const uint HandleFlagInherit = 0x00000001;
@@ -17,6 +19,7 @@ internal static class NativeProcessLauncher
     public static LaunchedProcess StartSuspendedInJob(
         string executable,
         IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string> environment,
         JobObject job)
     {
         IntPtr stdoutRead = IntPtr.Zero;
@@ -25,6 +28,8 @@ internal static class NativeProcessLauncher
         IntPtr stderrWrite = IntPtr.Zero;
         IntPtr stdinRead = IntPtr.Zero;
         IntPtr stdinWrite = IntPtr.Zero;
+        IntPtr environmentBlock = IntPtr.Zero;
+        byte[]? environmentBytes = null;
         var processInfo = default(ProcessInformation);
 
         try
@@ -46,14 +51,17 @@ internal static class NativeProcessLauncher
             {
                 commandLine.Append(' ').Append(QuoteArgument(argument));
             }
+            environmentBytes = BuildEnvironmentBlock(environment);
+            environmentBlock = Marshal.AllocHGlobal(environmentBytes.Length);
+            Marshal.Copy(environmentBytes, 0, environmentBlock, environmentBytes.Length);
             if (!CreateProcess(
                     executable,
                     commandLine,
                     IntPtr.Zero,
                     IntPtr.Zero,
                     inheritHandles: true,
-                    CreateSuspended | CreateNoWindow,
-                    IntPtr.Zero,
+                    CreateSuspended | CreateNoWindow | CreateUnicodeEnvironment,
+                    environmentBlock,
                     Path.GetDirectoryName(executable),
                     ref startupInfo,
                     out processInfo))
@@ -98,9 +106,32 @@ internal static class NativeProcessLauncher
             Close(ref stderrWrite);
             Close(ref stdinRead);
             Close(ref stdinWrite);
+            if (environmentBytes is not null)
+            {
+                if (environmentBlock != IntPtr.Zero)
+                {
+                    for (var index = 0; index < environmentBytes.Length; index++)
+                    {
+                        Marshal.WriteByte(environmentBlock, index, 0);
+                    }
+                    Marshal.FreeHGlobal(environmentBlock);
+                }
+                CryptographicOperations.ZeroMemory(environmentBytes);
+            }
             Close(ref processInfo.Thread);
             Close(ref processInfo.Process);
         }
+    }
+
+    private static byte[] BuildEnvironmentBlock(IReadOnlyDictionary<string, string> environment)
+    {
+        var builder = new StringBuilder();
+        foreach (var (name, value) in environment.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            builder.Append(name).Append('=').Append(value).Append('\0');
+        }
+        builder.Append('\0');
+        return Encoding.Unicode.GetBytes(builder.ToString());
     }
 
     private static StreamReader OpenReader(ref IntPtr handle)
