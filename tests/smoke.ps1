@@ -271,6 +271,8 @@ try {
     }
 
     'starter, values, secrets, and command smoke test: OK'
+    # GitHub Actions propagates the last native process exit code after the script returns.
+    $global:LASTEXITCODE = 0
 }
 catch {
     $logFiles = Get-ChildItem -LiteralPath (Join-Path $testRoot 'logs') -File -ErrorAction SilentlyContinue
