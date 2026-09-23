@@ -190,7 +190,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
             return $"ERROR installed executable is missing: {Path.GetRelativePath(paths.Root, executable)}";
         }
 
-        var environment = new ProcessEnvironmentBuilder(paths).Build(daemon.Environment);
+        var environment = new ProcessEnvironmentBuilder(paths).Build(daemon.Environment, catalog.Variables);
 
         log.LogInformation(
             "Starting {Daemon} from {Package} {Version}",

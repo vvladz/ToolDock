@@ -8,7 +8,9 @@ public sealed record ResolvedProcessEnvironment(
 
 public sealed class ProcessEnvironmentBuilder(ToolDockPaths paths)
 {
-    public ResolvedProcessEnvironment Build(IReadOnlyDictionary<string, EnvironmentValue> configured)
+    public ResolvedProcessEnvironment Build(
+        IReadOnlyDictionary<string, EnvironmentValue> configured,
+        IReadOnlyDictionary<string, string> catalogVariables)
     {
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
@@ -21,6 +23,10 @@ public sealed class ProcessEnvironmentBuilder(ToolDockPaths paths)
 
         var variables = new VariableStore(paths);
         var secrets = new SecretStore(paths);
+        var catalogVariableLookup = catalogVariables.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value,
+            StringComparer.OrdinalIgnoreCase);
         var resolved = new List<(string Name, string Value, string LogEntry)>();
         var missing = new List<(string Kind, string Name)>();
 
@@ -32,7 +38,11 @@ public sealed class ProcessEnvironmentBuilder(ToolDockPaths paths)
             }
             else if (source.Variable is not null)
             {
-                if (variables.TryGet(source.Variable, out var value))
+                if (catalogVariableLookup.TryGetValue(source.Variable, out var catalogValue))
+                {
+                    resolved.Add((name, catalogValue, $"{name}: {source.Variable} -> {catalogValue}"));
+                }
+                else if (variables.TryGet(source.Variable, out var value))
                 {
                     resolved.Add((name, value, $"{name}: {source.Variable} -> {value}"));
                 }

@@ -131,10 +131,13 @@ The client does not own supervised daemon processes. Interactive command process
 
 ## Catalog model
 
-The top-level `tools` object maps package names to installation definitions:
+The optional top-level `variables` object contains public catalog-wide variable overrides. The `tools` object maps package names to installation definitions:
 
 ```json
 {
+  "variables": {
+    "service.server": "https://service.example"
+  },
   "tools": {
     "package-name": {
       "repo": "owner/repository",
@@ -177,7 +180,7 @@ literal string                 public value stored in the catalog
 { "secret": "name" }         user-scoped DPAPI-protected value reference
 ```
 
-Variables and secrets use separate current-user stores and are resolved immediately before process creation. A missing reference fails the launch before any child process is created.
+Variable references resolve the catalog's top-level `variables` object first, then the separate current-user variable store. Catalog variables therefore override user variables with the same name. Secrets use their own current-user store. All values are resolved immediately before process creation, and a missing reference fails the launch before any child process is created.
 
 ## Installation layout
 

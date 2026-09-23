@@ -1,4 +1,7 @@
 {
+  "variables": {
+    "farshell.server": "127.0.0.1:7777"
+  },
   "tools": {
     "farshell": {
       "repo": "owner/farshell",

@@ -75,6 +75,9 @@ try {
     Copy-Item -Path (Join-Path $toolSource '*') -Destination $versionRoot -Recurse
 
     Write-Utf8Json (Join-Path $stateRoot 'catalog.json') ([ordered]@{
+        variables = [ordered]@{
+            'smoke.value' = 'catalog-value'
+        }
         tools = [ordered]@{
             smoke = [ordered]@{
                 repo = 'example/smoke'
@@ -86,6 +89,7 @@ try {
                         environment = [ordered]@{
                             LITERAL_VALUE = 'literal-value'
                             VARIABLE_VALUE = [ordered]@{ variable = 'smoke.value' }
+                            GLOBAL_VALUE = [ordered]@{ variable = 'smoke.fallback' }
                             SECRET_VALUE = [ordered]@{ secret = 'smoke.secret' }
                         }
                     }
@@ -99,6 +103,7 @@ try {
                         environment = [ordered]@{
                             LITERAL_VALUE = 'literal-value'
                             VARIABLE_VALUE = [ordered]@{ variable = 'smoke.value' }
+                            GLOBAL_VALUE = [ordered]@{ variable = 'smoke.fallback' }
                             SECRET_VALUE = [ordered]@{ secret = 'smoke.secret' }
                         }
                     }
@@ -126,6 +131,10 @@ try {
     if ((@(& $client variable get smoke.value) -join '') -ne 'variable-value') {
         throw 'Variable get did not return the stored value.'
     }
+    $fallbackSet = @(& $client variable set smoke.fallback global-value 2>&1)
+    if ($LASTEXITCODE -ne 0 -or ($fallbackSet -join '') -ne 'Variable set: smoke.fallback') {
+        throw "Fallback variable set failed: $($fallbackSet -join ',')"
+    }
 
     $secretValue = 'secret-value'
     $secretSet = @($secretValue | & $client secret set smoke.secret --stdin 2>&1)
@@ -136,8 +145,9 @@ try {
     if ((Get-Content -LiteralPath $secretFile -Raw).Contains($secretValue)) {
         throw 'Secret store contains the plaintext secret.'
     }
-    if ((@(& $client variable status) -join '') -ne 'smoke.value set') {
-        throw 'Variable status did not report the referenced value as set.'
+    $variableStatus = @(& $client variable status)
+    if (($variableStatus -join '|') -ne 'smoke.fallback set|smoke.value unused') {
+        throw "Variable status did not distinguish the fallback and shadowed values: $($variableStatus -join ',')"
     }
     if ((@(& $client secret status) -join '') -ne 'smoke.secret set') {
         throw 'Secret status did not report the referenced value as set.'
@@ -154,7 +164,8 @@ try {
     }
     $clientLog = Get-Content -LiteralPath $clientLogPath -Raw
     if ($clientLog -notmatch 'LITERAL_VALUE: literal-value' -or
-        $clientLog -notmatch 'VARIABLE_VALUE: smoke.value -> variable-value' -or
+        $clientLog -notmatch 'VARIABLE_VALUE: smoke.value -> catalog-value' -or
+        $clientLog -notmatch 'GLOBAL_VALUE: smoke.fallback -> global-value' -or
         $clientLog -notmatch 'SECRET_VALUE: smoke.secret -> \*\*\*\*\*\*\*') {
         throw 'Client environment log does not contain the expected values and placeholder.'
     }
@@ -214,7 +225,8 @@ try {
     }
     $starterLog = Get-Content -LiteralPath $starterLogPath -Raw
     if ($starterLog -notmatch 'LITERAL_VALUE: literal-value' -or
-        $starterLog -notmatch 'VARIABLE_VALUE: smoke.value -> variable-value' -or
+        $starterLog -notmatch 'VARIABLE_VALUE: smoke.value -> catalog-value' -or
+        $starterLog -notmatch 'GLOBAL_VALUE: smoke.fallback -> global-value' -or
         $starterLog -notmatch 'SECRET_VALUE: smoke.secret -> \*\*\*\*\*\*\*') {
         throw 'Starter environment log does not contain the expected values and placeholder.'
     }

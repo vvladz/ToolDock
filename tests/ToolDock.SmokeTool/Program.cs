@@ -70,8 +70,29 @@ if (args is ["--verify-catalog-schema"])
         """;
     RequireRejected(emptyEntryPoints);
 
+    const string invalidCatalogVariables = """
+        {
+          "variables": {
+            "invalid name": "value"
+          },
+          "tools": {}
+        }
+        """;
+    RequireRejected(invalidCatalogVariables);
+
+    const string nullCatalogVariables = """
+        {
+          "variables": null,
+          "tools": {}
+        }
+        """;
+    RequireRejected(nullCatalogVariables);
+
     const string validCatalog = """
         {
+          "variables": {
+            "service.server": "catalog-server"
+          },
           "tools": {
             "valid": {
               "repo": "example/valid",
@@ -148,7 +169,8 @@ await Task.Delay(Timeout.InfiniteTimeSpan);
 
 static bool EnvironmentIsExpected()
     => Environment.GetEnvironmentVariable("LITERAL_VALUE") == "literal-value" &&
-       Environment.GetEnvironmentVariable("VARIABLE_VALUE") == "variable-value" &&
+       Environment.GetEnvironmentVariable("VARIABLE_VALUE") == "catalog-value" &&
+       Environment.GetEnvironmentVariable("GLOBAL_VALUE") == "global-value" &&
        Environment.GetEnvironmentVariable("SECRET_VALUE") == "secret-value";
 
 static void RequireRejected(string json)

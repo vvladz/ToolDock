@@ -230,6 +230,7 @@ internal static class Program
 
         Validation.ValidateCatalog(catalog);
         var references = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var catalogVariables = new HashSet<string>(catalog.Variables.Keys, StringComparer.OrdinalIgnoreCase);
         foreach (var package in catalog.Tools.Values)
         {
             var environments = package.Commands.Values.Select(command => command.Environment)
@@ -239,7 +240,7 @@ internal static class Program
                 foreach (var value in environment.Values)
                 {
                     var reference = secret ? value.Secret : value.Variable;
-                    if (reference is not null)
+                    if (reference is not null && (secret || !catalogVariables.Contains(reference)))
                     {
                         references.Add(reference);
                     }
@@ -317,7 +318,7 @@ internal static class Program
                 executable);
         }
 
-        var environment = new ProcessEnvironmentBuilder(paths).Build(command.Environment);
+        var environment = new ProcessEnvironmentBuilder(paths).Build(command.Environment, catalog.Variables);
         using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(
             new RotatingFileLoggerProvider(Path.Combine(paths.Logs, "ToolDock.Client.log"))));
         var log = loggerFactory.CreateLogger("ToolDock.Client");

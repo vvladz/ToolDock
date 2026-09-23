@@ -15,6 +15,26 @@ public static partial class Validation
 
     public static void ValidateCatalog(ToolCatalog catalog)
     {
+        if (catalog.Variables is null)
+        {
+            throw new InvalidDataException("Catalog variables must be an object.");
+        }
+
+        var variableNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in catalog.Variables)
+        {
+            ValidateValueName(name);
+            if (!variableNames.Add(name))
+            {
+                throw new InvalidDataException($"Duplicate catalog variable name differs only by case: {name}");
+            }
+            if (value is null)
+            {
+                throw new InvalidDataException($"Catalog variable value cannot be null: {name}");
+            }
+            ValidateEnvironmentValue(value);
+        }
+
         var packageNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var commandNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var daemonNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

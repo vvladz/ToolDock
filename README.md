@@ -53,6 +53,9 @@ A catalog entry describes one release package and its command and daemon entry p
 
 ```json
 {
+  "variables": {
+    "farshell.server": "127.0.0.1:7777"
+  },
   "tools": {
     "farshell": {
       "repo": "owner/farshell",
@@ -109,6 +112,7 @@ Fields:
 
 | Field | Meaning |
 |---|---|
+| `variables` | Optional catalog-wide plaintext variables that override user variables with the same name |
 | `repo` | GitHub repository in `owner/name` form |
 | `asset` | Exact ZIP asset name in the latest release |
 | `enabled` | Whether ToolDock may update and start the package |
@@ -149,11 +153,11 @@ Environment entries support three forms:
 }
 ```
 
-- literals live in the public catalog;
-- variables are user-scoped named plaintext values in `%LOCALAPPDATA%\ToolDock\variables.json`;
+- literals live directly in process definitions in the public catalog;
+- variables are catalog-wide plaintext values or user-scoped plaintext values in `%LOCALAPPDATA%\ToolDock\variables.json`;
 - secrets are user-scoped named values protected with Windows DPAPI `CurrentUser` in `%LOCALAPPDATA%\ToolDock\secrets\secrets.dat`.
 
-Variables and secrets are global within the current user's ToolDock installation, so multiple commands or daemons can reference the same name. They are not added to the global Windows environment; ToolDock injects them only into configured child processes.
+`{ "variable": "name" }` first resolves `name` from the catalog's top-level `variables` object, then falls back to the current user's variable store. A catalog value therefore overrides a user value with the same name. Variables and secrets are shared by all commands and daemons. They are not added to the global Windows environment; ToolDock injects them only into configured child processes. `tdctl variable status` describes the user store, so a user variable shadowed by the catalog is reported as unused.
 
 Manage variables with:
 

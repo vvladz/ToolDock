@@ -11,6 +11,7 @@ public sealed class ToolDockConfig
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class ToolCatalog
 {
+    public Dictionary<string, string> Variables { get; init; } = [];
     public Dictionary<string, ToolDefinition> Tools { get; init; } = [];
 }
 
