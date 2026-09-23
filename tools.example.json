@@ -39,8 +39,7 @@
         "devproxy": {
           "executable": "app/devproxy.exe"
         }
-      },
-      "daemons": {}
+      }
     }
   }
 }

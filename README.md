@@ -87,7 +87,7 @@ A catalog entry describes one release package and its command and daemon entry p
 }
 ```
 
-One package may contain any combination of CLI commands and background daemons. The same executable may serve both roles; daemon arguments can select its background mode:
+One package may contain CLI commands, background daemons, or both. At least one command or daemon is required; an unused `commands` or `daemons` section may be omitted. The same executable may serve both roles; daemon arguments can select its background mode:
 
 ```json
 "commands": {
@@ -112,8 +112,8 @@ Fields:
 | `repo` | GitHub repository in `owner/name` form |
 | `asset` | Exact ZIP asset name in the latest release |
 | `enabled` | Whether ToolDock may update and start the package |
-| `commands` | Globally unique command names mapped to command definitions |
-| `daemons` | Globally unique supervised-daemon names and their launch settings |
+| `commands` | Optional globally unique command names mapped to command definitions |
+| `daemons` | Optional globally unique supervised-daemon names and their launch settings |
 | `executable` | Relative executable path inside the ZIP |
 | `arguments` | Optional daemon arguments |
 | `autostart` | Start the daemon after sign-in or its first installation |

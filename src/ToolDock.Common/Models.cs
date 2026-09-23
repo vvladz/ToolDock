@@ -20,8 +20,8 @@ public sealed class ToolDefinition
     public required string Repo { get; init; }
     public required string Asset { get; init; }
     public bool Enabled { get; init; } = true;
-    public required Dictionary<string, CommandDefinition> Commands { get; init; }
-    public required Dictionary<string, DaemonDefinition> Daemons { get; init; }
+    public Dictionary<string, CommandDefinition> Commands { get; init; } = [];
+    public Dictionary<string, DaemonDefinition> Daemons { get; init; } = [];
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

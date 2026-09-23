@@ -167,7 +167,7 @@ The top-level `tools` object maps package names to installation definitions:
 }
 ```
 
-Package names, command names, and daemon names are case-insensitively unique within their respective namespaces. Command and daemon executable paths must remain under the extracted package directory. Environment names use the conventional Windows identifier form and are case-insensitively unique within one process definition.
+Each package must define at least one command or daemon. Either section may be omitted when unused. Package names, command names, and daemon names are case-insensitively unique within their respective namespaces. Command and daemon executable paths must remain under the extracted package directory. Environment names use the conventional Windows identifier form and are case-insensitively unique within one process definition.
 
 An environment value is exactly one of:
 

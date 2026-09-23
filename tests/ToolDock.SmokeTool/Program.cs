@@ -44,6 +44,32 @@ if (args is ["--verify-catalog-schema"])
         """;
     RequireRejected(ambiguousEnvironment);
 
+    const string missingEntryPoints = """
+        {
+          "tools": {
+            "invalid": {
+              "repo": "example/invalid",
+              "asset": "invalid.zip"
+            }
+          }
+        }
+        """;
+    RequireRejected(missingEntryPoints);
+
+    const string emptyEntryPoints = """
+        {
+          "tools": {
+            "invalid": {
+              "repo": "example/invalid",
+              "asset": "invalid.zip",
+              "commands": {},
+              "daemons": {}
+            }
+          }
+        }
+        """;
+    RequireRejected(emptyEntryPoints);
+
     const string validCatalog = """
         {
           "tools": {
@@ -59,8 +85,7 @@ if (args is ["--verify-catalog-schema"])
                     "TOKEN": { "secret": "service.token" }
                   }
                 }
-              },
-              "daemons": {}
+              }
             }
           }
         }
@@ -72,6 +97,24 @@ if (args is ["--verify-catalog-schema"])
         JsonSerializer.Serialize(catalog, JsonFiles.Options),
         JsonFiles.Options) ?? throw new InvalidOperationException("Catalog round trip was empty.");
     Validation.ValidateCatalog(roundTrip);
+
+    const string daemonOnlyCatalog = """
+        {
+          "tools": {
+            "valid": {
+              "repo": "example/valid",
+              "asset": "valid.zip",
+              "daemons": {
+                "valid": {
+                  "executable": "valid.exe"
+                }
+              }
+            }
+          }
+        }
+        """;
+    Validation.ValidateCatalog(JsonSerializer.Deserialize<ToolCatalog>(daemonOnlyCatalog, JsonFiles.Options)
+        ?? throw new InvalidOperationException("Valid daemon-only catalog was empty."));
 
     Console.WriteLine("catalog schema verified");
     return;
@@ -112,9 +155,11 @@ static void RequireRejected(string json)
 {
     try
     {
-        _ = JsonSerializer.Deserialize<ToolCatalog>(json, JsonFiles.Options);
+        var catalog = JsonSerializer.Deserialize<ToolCatalog>(json, JsonFiles.Options)
+            ?? throw new InvalidOperationException("Catalog was empty.");
+        Validation.ValidateCatalog(catalog);
     }
-    catch (JsonException)
+    catch (Exception exception) when (exception is JsonException or InvalidDataException)
     {
         return;
     }
