@@ -7,8 +7,8 @@ ToolDock is a user-scoped Windows package updater and process supervisor. It ins
 - Managed packages remain ordinary standalone ZIP archives and executables.
 - Managed packages consume ordinary environment variables and do not know about ToolDock value storage or DPAPI.
 - GitHub polling and installation stay outside managed tools.
-- Only the starter owns managed processes and their Job Objects.
-- Only one update operation may run in the user session at a time.
+- Only the starter owns supervised daemon processes and their Job Objects. The client owns interactive command launches; notification delivery owns its temporary handler process.
+- Only one update operation per installation root may run in the user session at a time.
 - ToolDock requires no administrator privileges, Windows Service, SSH, or inbound connection.
 - Scheduled components never create console windows.
 - CLI output and persistent diagnostic logging remain separate concerns.
@@ -64,7 +64,7 @@ managed command shim ──────► ToolDock.Client.exe exec
 
 The starter is stateful and exclusive. It:
 
-- loads daemon definitions from the cached catalog;
+- loads daemon definitions and version roots from the same installed-state snapshot;
 - starts configured autostart daemons;
 - owns the process and Job Object handles;
 - starts, stops, restarts, and reports daemon status;
@@ -106,9 +106,12 @@ The engine:
 3. downloads and extracts a changed package into a staging directory;
 4. validates every declared executable;
 5. moves the staged version into its final directory;
-6. atomically switches the `current` junction;
-7. creates command shims and saves installed state;
-8. asks the starter to reconcile the updated package.
+6. atomically publishes installed paths, active definitions, catalog variable snapshots, and pending reconciliation in `installed.json`;
+7. repairs the derived catalog cache, `current` junctions, and generated command shims;
+8. asks the starter to reconcile the updated package with a stable activation identifier;
+9. persists reconciliation completion, emits a version-change event, and prunes unused older versions.
+
+Before contacting the network, every run repairs derived files from committed state. Failed downloads and extraction never publish new definitions. Readers use the atomic installed-state snapshot; legacy state falls back to `catalog.json`. Repository and asset identity are stored with each installation and contribute to the version directory name. Junction creation uses the Windows reparse-point API directly, without a command shell.
 
 The scheduled updater and interactive client differ only at the host boundary:
 
@@ -119,8 +122,9 @@ The scheduled updater and interactive client differ only at the host boundary:
 
 ### Client
 
-The client has five kinds of operation:
+The client provides:
 
+- local help and installed-command discovery (`commands`), without a Starter connection;
 - process control goes through the starter Named Pipe;
 - `update` directly runs the shared update coordinator;
 - `exec` resolves and runs a catalog command with its configured environment;
@@ -194,11 +198,14 @@ Variable references resolve the catalog's top-level `variables` object first, th
 │   └── <managed-command>.cmd
 ├── tools\
 │   └── <package>\
-│       ├── <version>\
-│       └── current\ -> <version>
+│       ├── <version>--<source-id>\
+│       ├── .leases\
+│       └── current\ -> <version>--<source-id>
 ├── state\
 │   ├── catalog.json
-│   └── installed.json
+│   ├── installed.json
+│   ├── starter-reconciliations.json
+│   └── update-failures.json
 ├── logs\
 │   ├── ToolDock.Starter.log
 │   ├── ToolDock.Updater.log
@@ -213,6 +220,10 @@ Variable references resolve the catalog's top-level `variables` object first, th
 
 Installed state records the package version directory, not a single executable. That permits one release package to provide multiple commands and daemons. State also records generated command names so obsolete shims can be removed safely.
 
+The default root remains `%LOCALAPPDATA%\ToolDock`. With no `TOOLDOCK_HOME` override, an executable in `<root>\bin` discovers `<root>\config.json`. Custom roots append a stable root hash to the pipe and singleton/update mutex names; the default root retains the original names.
+
+Retention keeps the newest three marked version directories, the installed-state root, the `current` target, and any older version in use. Commands, notification handlers, and daemons hold shared version leases outside the version directory. Cleanup takes an exclusive lease before renaming an unused version to a private cleanup directory. It also checks matching running executable paths to protect a command whose client died. Inaccessible matching processes defer cleanup. Recursive deletion rejects reparse points and leaves the ownership marker until payload removal completes. Cleanup errors are warnings and are retried after later successful checks; unmarked legacy directories are preserved.
+
 ## Update and restart semantics
 
 An updated command begins using the installed version recorded in ToolDock state on its next invocation. Existing command processes are not managed by ToolDock.
@@ -222,7 +233,7 @@ Variable and secret changes also take effect on the next process launch. ToolDoc
 For daemons, the engine sends:
 
 ```text
-package-updated <package> installed|updated
+package-updated <package> installed|updated <activation-id>
 ```
 
 The starter then applies these rules:
@@ -232,7 +243,7 @@ The starter then applies these rules:
 - stopped entries remain stopped;
 - command-only packages require no process action.
 
-The updater never stops or starts managed processes directly. If the starter cannot reconcile an installed package, installation remains complete, the problem is logged, and the update result reports an error.
+The updater never stops or starts managed daemons directly. If the starter cannot reconcile an installed package, installation remains complete, the pending request stays in installed state, and the update result reports an error. The next run retries it before installing another release. Starter persists its remaining daemon actions and completion receipts; process activation IDs also prevent duplicate restarts when a receipt write or reply is lost. The legacy request without an activation ID remains accepted.
 
 ## Process containment
 
@@ -242,7 +253,7 @@ Daemon arguments are encoded using Windows command-line quoting rules. The execu
 
 The starter builds a Unicode child environment block from its inherited environment plus the daemon's configured overrides. The client applies the same resolver to interactive command processes. Neither component modifies the user's global Windows environment.
 
-The starter captures stdout and stderr through inherited anonymous pipes. It drains them after Job Object termination before recording the final exit event.
+The starter captures stdout and stderr through inherited anonymous pipes. A separate observer records the main process exit immediately and once, independently of later stop/disposal calls. Unexpected exits schedule notification delivery outside supervisor locks; the last nonempty stderr line is retained in a bounded buffer. Requested stops and restarts do not emit crash notifications. Job Object shutdown still drains the output pumps.
 
 ## IPC and security
 
@@ -288,7 +299,15 @@ Inherited environment entries are not logged. Secret plaintext is never passed t
 
 Each secret value is encrypted with Windows DPAPI using `DataProtectionScope.CurrentUser`. Secret names and ciphertext remain visible, but the plaintext is tied to the current Windows user. ToolDock exposes set, list, status, and remove operations, but no normal secret get/export operation. DPAPI protects stored data; it is not a security boundary against arbitrary malicious code already running as the same user.
 
-Log files rotate at 10 MB with five archives. Writers allow read and delete sharing so `tdctl logs --follow` can coexist with rotation.
+Log files rotate at 10 MB with five archives. A mutex derived from the canonical log path serializes writes and rotation across processes. Each write opens and closes the file under that mutex, so a writer cannot retain a stale archive handle. Readers use read/write/delete sharing.
+
+The update coordinator records one start and one final outcome after acquiring the update mutex. The final record includes status and counts, including cancellation and fatal failures. The terminal keeps its existing summary without printing a duplicate final record.
+
+## Notification delivery
+
+`notificationCommand` in `config.json` selects a command from the active installed catalog. `NotificationSender` resolves the executable and normal environment directly, sends the event type in argv and the UTF-8 message on stdin, and bounds execution with `notificationTimeoutSeconds` (default 10, range 1–60). It drains handler output and terminates a timed-out handler. Delivery errors are local warnings and never become another event.
+
+Events are `daemon-crash`, `tool-update-success`, and `tool-update-failure`. Update success requires a version change and completed reconciliation. An attempt-local buffer supplies up to 20 lines / 4 KiB of failure context. A persisted failure fingerprint per package or run suppresses consecutive identical failures and is cleared by a successful check. No handler is configured by default.
 
 ## Task Scheduler
 
@@ -297,6 +316,8 @@ The installer creates two limited, interactive-user tasks:
 - `ToolDock Starter`: at logon, no execution time limit;
 - `ToolDock Updater`: at logon and then at the configured repetition interval.
 
+These task names are fixed. Root-specific runtime IPC supports isolated tests and manual instances, but the installer supports one scheduled installation per user. Rerunning against another root replaces task registrations and does not migrate stored data.
+
 The updater is a daemon in the deployment sense: it is a windowless background executable. It remains one-shot rather than resident; Task Scheduler owns its schedule.
 
 ## Build and release
@@ -304,17 +325,12 @@ The updater is a daemon in the deployment sense: it is a windowless background e
 The Windows workflow:
 
 1. restores and builds the solution;
-2. verifies Windows PowerShell installer compatibility;
-3. publishes all three executables as framework-dependent single files and rejects managed sidecars;
-4. tests updater mutex ownership and collision behavior;
-5. tests client output and interactive updating;
-6. runs an actual autostart, argument, output-capture, package-restart, and process-tree smoke cycle;
-7. creates the release ZIP and SHA-256 file.
+2. verifies installer help, staging, and recovery in Windows PowerShell 5.1 and PowerShell 7;
+3. runs deterministic integration scenarios for package activation, reconciliation, retention, notifications, and concurrent clients;
+4. publishes all three executables as framework-dependent single files and rejects managed sidecars;
+5. tests updater mutex ownership and collision behavior;
+6. tests client help, command discovery, output, and interactive updating;
+7. runs an actual autostart, argument, output-capture, package-restart, and process-tree smoke cycle;
+8. creates the release ZIP and SHA-256 file.
 
-Pull requests and manual workflow runs stop after validation and artifact upload. A successful push to `master` creates or repairs the release for that workflow run. The version format is:
-
-```text
-v0.2.<github-run-number>
-```
-
-The run number makes a workflow retry idempotent. Master runs are serialized so an older commit cannot finish after a newer commit and become the latest release.
+Local commands and coverage limits are documented in [testing.md](testing.md). The notification handler contract and delivery limits are in [notifications.md](notifications.md).

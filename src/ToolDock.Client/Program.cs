@@ -9,27 +9,16 @@ namespace ToolDock.Client;
 
 internal static class Program
 {
-    private const string Usage = """
-        Usage:
-          tdctl list
-          tdctl start|stop|restart|status <daemon>
-          tdctl update
-          tdctl variable set <name> <value>
-          tdctl variable get|remove <name>
-          tdctl variable list|status
-          tdctl secret set <name> [--stdin]
-          tdctl secret remove <name>
-          tdctl secret list|status
-          tdctl logs <ToolDock.Starter|ToolDock.Updater|daemon> [--lines <count>] [--follow]
-        """;
-
     public static int Main(string[] args)
     {
         try
         {
             return args switch
             {
-                ["--help" or "-h"] => PrintHelp(),
+                ["--help" or "-h" or "help"] => PrintHelp(),
+                ["help", var topic] => PrintHelp(topic),
+                [var topic, "--help" or "-h"] when ClientHelp.For(topic) is not null => PrintHelp(topic),
+                ["commands"] => ListCommands(),
                 ["list"] => RunStarterCommandAsync("list").GetAwaiter().GetResult(),
                 [var command, var name] when command is "start" or "stop" or "restart" or "status"
                     => RunDaemonCommandAsync(command, name).GetAwaiter().GetResult(),
@@ -57,16 +46,34 @@ internal static class Program
         }
     }
 
-    private static int PrintHelp()
+    private static int PrintHelp(string? topic = null)
     {
-        Console.WriteLine(Usage);
+        var help = topic is null ? ClientHelp.Overview : ClientHelp.For(topic);
+        if (help is null)
+        {
+            Console.Error.WriteLine($"Unknown help topic: {topic}");
+            return UsageError();
+        }
+        Console.WriteLine(help);
         return 0;
     }
 
     private static int UsageError()
     {
-        Console.Error.WriteLine(Usage);
+        Console.Error.WriteLine(ClientHelp.Overview);
         return 2;
+    }
+
+    private static int ListCommands()
+    {
+        var snapshot = InstalledSnapshot.ReadAsync(new ToolDockPaths()).GetAwaiter().GetResult();
+        var installedNames = new HashSet<string>(snapshot.State.Tools.Keys, StringComparer.OrdinalIgnoreCase);
+        var commands = snapshot.Catalog.Tools
+            .Where(pair => pair.Value.Enabled && installedNames.Contains(pair.Key))
+            .SelectMany(pair => pair.Value.Commands.Keys)
+            .Order(StringComparer.OrdinalIgnoreCase);
+        foreach (var command in commands) Console.WriteLine(command);
+        return 0;
     }
 
     private static async Task<int> RunDaemonCommandAsync(string command, string name)
@@ -221,18 +228,13 @@ internal static class Program
 
     private static HashSet<string> ReadReferences(ToolDockPaths paths, bool secret)
     {
-        var catalog = JsonFiles.ReadOptionalAsync<ToolCatalog>(paths.CatalogCacheFile)
-            .GetAwaiter().GetResult();
-        if (catalog is null)
-        {
-            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        }
-
-        Validation.ValidateCatalog(catalog);
+        var snapshot = InstalledSnapshot.ReadAsync(paths).GetAwaiter().GetResult();
+        var catalog = snapshot.Catalog;
         var references = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var catalogVariables = new HashSet<string>(catalog.Variables.Keys, StringComparer.OrdinalIgnoreCase);
-        foreach (var package in catalog.Tools.Values)
+        foreach (var (packageName, package) in catalog.Tools)
         {
+            var installed = snapshot.State.Tools.FirstOrDefault(p => p.Key.Equals(packageName, StringComparison.OrdinalIgnoreCase)).Value;
+            var catalogVariables = new HashSet<string>((installed?.CatalogVariables ?? catalog.Variables).Keys, StringComparer.OrdinalIgnoreCase);
             var environments = package.Commands.Values.Select(command => command.Environment)
                 .Concat(package.Daemons.Values.Select(daemon => daemon.Environment));
             foreach (var environment in environments)
@@ -294,23 +296,18 @@ internal static class Program
     {
         Validation.ValidateToolName(name);
         var paths = CreatePaths();
-        var catalog = JsonFiles.ReadRequiredAsync<ToolCatalog>(paths.CatalogCacheFile)
-            .GetAwaiter().GetResult();
-        Validation.ValidateCatalog(catalog);
+        var snapshot = InstalledSnapshot.ReadAsync(paths).GetAwaiter().GetResult();
+        var catalog = snapshot.Catalog;
         var (packageName, package, command) = Validation.FindCommand(catalog, name);
         if (!package.Enabled)
         {
             throw new InvalidOperationException($"Package is disabled: {packageName}");
         }
 
-        var state = JsonFiles.ReadRequiredAsync<InstalledState>(paths.InstalledStateFile)
-            .GetAwaiter().GetResult();
-        var installed = Validation.FindInstalled(state, packageName);
-        var packageRoot = paths.ResolveUnderRoot(
-            installed.Root ?? Path.Combine("tools", packageName, installed.Version));
-        var executable = ResolveUnder(
-            packageRoot,
-            Validation.ValidateExecutablePath($"command {name}", command.Executable));
+        var installed = Validation.FindInstalled(snapshot.State, packageName);
+        var packageRoot = snapshot.PackageRoot(paths, packageName);
+        using var lease = VersionLease.Acquire(packageRoot);
+        var executable = Validation.ResolveExecutable(packageRoot, $"command {name}", command.Executable);
         if (!File.Exists(executable))
         {
             throw new FileNotFoundException(
@@ -318,7 +315,8 @@ internal static class Program
                 executable);
         }
 
-        var environment = new ProcessEnvironmentBuilder(paths).Build(command.Environment, catalog.Variables);
+        var environment = new ProcessEnvironmentBuilder(paths).Build(
+            command.Environment, installed.CatalogVariables ?? catalog.Variables);
         using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(
             new RotatingFileLoggerProvider(Path.Combine(paths.Logs, "ToolDock.Client.log"))));
         var log = loggerFactory.CreateLogger("ToolDock.Client");
@@ -355,17 +353,6 @@ internal static class Program
         var paths = new ToolDockPaths();
         paths.EnsureDirectories();
         return paths;
-    }
-
-    private static string ResolveUnder(string root, string relativePath)
-    {
-        var resolved = Path.GetFullPath(relativePath, root);
-        var prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        if (!resolved.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidDataException("Executable path escapes the installed version directory.");
-        }
-        return resolved;
     }
 
     private static async Task<int> ShowLogsAsync(string[] args)

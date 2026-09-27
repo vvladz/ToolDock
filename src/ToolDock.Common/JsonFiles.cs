@@ -12,7 +12,7 @@ public static class JsonFiles
 
     public static async Task<T> ReadRequiredAsync<T>(string path, CancellationToken cancellationToken = default)
     {
-        await using var stream = File.OpenRead(path);
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
         return await JsonSerializer.DeserializeAsync<T>(stream, Options, cancellationToken)
             ?? throw new InvalidDataException($"JSON file is empty: {path}");
     }

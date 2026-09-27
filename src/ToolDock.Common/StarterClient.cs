@@ -3,7 +3,7 @@ using System.Text;
 
 namespace ToolDock.Common;
 
-public sealed class StarterClient
+public sealed class StarterClient(ToolDockPaths? paths = null)
 {
     public const string PipeName = "ToolDock.Starter.v1";
 
@@ -17,7 +17,7 @@ public sealed class StarterClient
 
         await using var pipe = new NamedPipeClientStream(
             ".",
-            PipeName,
+            (paths ?? new ToolDockPaths()).StarterPipeName,
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
         await pipe.ConnectAsync(timeoutSource.Token);

@@ -11,7 +11,7 @@ public sealed class RotatingFileWriter : IDisposable
     private readonly string _path;
     private readonly long _maxBytes;
     private readonly int _archiveCount;
-    private StreamWriter? _writer;
+    private readonly Mutex _mutex;
     private bool _disposed;
 
     public RotatingFileWriter(
@@ -25,6 +25,7 @@ public sealed class RotatingFileWriter : IDisposable
         _path = path;
         _maxBytes = maxBytes;
         _archiveCount = archiveCount;
+        _mutex = new Mutex(false, @"Local\ToolDock.Log." + ToolDockPaths.PathIdentity(path));
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
     }
 
@@ -33,25 +34,22 @@ public sealed class RotatingFileWriter : IDisposable
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            var bytes = Encoding.UTF8.GetByteCount(line) + Environment.NewLine.Length;
-            EnsureWriter(bytes);
-            _writer!.WriteLine(line);
-            _writer.Flush();
+            try { _mutex.WaitOne(); }
+            catch (AbandonedMutexException) { }
+            try
+            {
+                var bytes = Encoding.UTF8.GetByteCount(line) + Environment.NewLine.Length;
+                if (File.Exists(_path) && new FileInfo(_path).Length is var length &&
+                    length > 0 && length + bytes > _maxBytes)
+                {
+                    Rotate();
+                }
+                // No process retains an old file handle after another writer rotates it.
+                using var writer = OpenWriter();
+                writer.WriteLine(line);
+            }
+            finally { _mutex.ReleaseMutex(); }
         }
-    }
-
-    private void EnsureWriter(int incomingBytes)
-    {
-        _writer ??= OpenWriter();
-        if (_writer.BaseStream.Length == 0 || _writer.BaseStream.Length + incomingBytes <= _maxBytes)
-        {
-            return;
-        }
-
-        _writer.Dispose();
-        _writer = null;
-        Rotate();
-        _writer = OpenWriter();
     }
 
     private StreamWriter OpenWriter()
@@ -98,8 +96,7 @@ public sealed class RotatingFileWriter : IDisposable
             }
 
             _disposed = true;
-            _writer?.Dispose();
-            _writer = null;
+            _mutex.Dispose();
         }
     }
 }

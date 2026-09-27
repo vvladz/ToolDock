@@ -7,6 +7,7 @@
     <SelfContained>false</SelfContained>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="ToolDock.IntegrationTests" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
     <ProjectReference Include="..\ToolDock.Common\ToolDock.Common.csproj" />
   </ItemGroup>

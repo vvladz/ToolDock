@@ -1,4 +1,8 @@
-using System.Diagnostics;
+using System.Buffers.Binary;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace ToolDock.Updating;
 
@@ -64,34 +68,46 @@ internal static class Junction
         }
     }
 
-    private static async Task CreateAsync(string junctionPath, string targetPath, CancellationToken cancellationToken)
+    private static Task CreateAsync(string junctionPath, string targetPath, CancellationToken cancellationToken)
     {
-        var startInfo = new ProcessStartInfo("cmd.exe")
+        cancellationToken.ThrowIfCancellationRequested();
+        var target = Path.GetFullPath(targetPath);
+        var substitute = Encoding.Unicode.GetBytes(target.StartsWith(@"\\", StringComparison.Ordinal)
+            ? @"\??\UNC\" + target[2..] : @"\??\" + target);
+        var print = Encoding.Unicode.GetBytes(target);
+        // REPARSE_DATA_BUFFER: header, mount-point offsets, two NUL-terminated UTF-16 paths.
+        var buffer = new byte[20 + substitute.Length + print.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer, 0xA0000003); // IO_REPARSE_TAG_MOUNT_POINT
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(4), checked((ushort)(buffer.Length - 8)));
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(10), checked((ushort)substitute.Length));
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(12), checked((ushort)(substitute.Length + 2)));
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(14), checked((ushort)print.Length));
+        substitute.CopyTo(buffer, 16);
+        print.CopyTo(buffer, 18 + substitute.Length);
+        Directory.CreateDirectory(junctionPath);
+        try
         {
-            CreateNoWindow = true,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-            UseShellExecute = false
-        };
-        startInfo.ArgumentList.Add("/d");
-        startInfo.ArgumentList.Add("/c");
-        startInfo.ArgumentList.Add("mklink");
-        startInfo.ArgumentList.Add("/J");
-        startInfo.ArgumentList.Add(junctionPath);
-        startInfo.ArgumentList.Add(targetPath);
-
-        using var process = Process.Start(startInfo)
-            ?? throw new IOException("Failed to start cmd.exe while creating a directory junction.");
-        var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var standardError = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-        if (process.ExitCode != 0)
-        {
-            throw new IOException(
-                $"Failed to create junction {junctionPath}: {(await standardError).Trim()} {(await standardOutput).Trim()}".Trim());
+            using var handle = CreateFile(junctionPath, 0x40000000, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+            if (handle.IsInvalid || !DeviceIoControl(handle, 0x000900A4, buffer, buffer.Length,
+                    IntPtr.Zero, 0, out _, IntPtr.Zero))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), $"Cannot create junction: {junctionPath}");
+            }
         }
-
-        await standardOutput;
-        await standardError;
+        catch
+        {
+            Directory.Delete(junctionPath);
+            throw;
+        }
+        return Task.CompletedTask;
     }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateFileW")]
+    private static extern SafeFileHandle CreateFile(string fileName, uint access, uint share,
+        IntPtr security, uint disposition, uint flags, IntPtr template);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeviceIoControl(SafeFileHandle handle, uint code, byte[] input, int inputSize,
+        IntPtr output, int outputSize, out int returned, IntPtr overlapped);
 }

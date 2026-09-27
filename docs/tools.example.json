@@ -26,10 +26,7 @@
           "autostart": true,
           "restartOnUpdate": true,
           "environment": {
-            "LOG_LEVEL": "info",
-            "OPENAI_API_KEY": {
-              "secret": "openai.api-key"
-            }
+            "LOG_LEVEL": "info"
           }
         }
       }

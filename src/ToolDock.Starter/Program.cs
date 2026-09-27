@@ -22,7 +22,7 @@ internal static class Program
             return 2;
         }
 
-        using var mutex = new Mutex(initiallyOwned: false, @"Local\ToolDock.Starter");
+        using var mutex = new Mutex(initiallyOwned: false, paths.StarterMutexName);
         var ownsMutex = false;
         try
         {
@@ -66,7 +66,7 @@ internal static class Program
             paths,
             loggerFactory.CreateLogger<ToolSupervisor>());
         await supervisor.AutostartAsync(cancellationToken);
-        var server = new PipeServer(supervisor, loggerFactory.CreateLogger<PipeServer>());
+        var server = new PipeServer(supervisor, loggerFactory.CreateLogger<PipeServer>(), paths.StarterPipeName);
         await server.RunAsync(cancellationToken);
         return 0;
     }

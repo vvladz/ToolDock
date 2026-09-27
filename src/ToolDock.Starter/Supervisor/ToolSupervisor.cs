@@ -4,16 +4,19 @@ using ToolDock.Starter.Processes;
 
 namespace ToolDock.Starter.Supervisor;
 
-internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor> log) : IAsyncDisposable
+internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor> log, INotificationSender? notifications = null) : IAsyncDisposable
 {
     private readonly Dictionary<string, ManagedToolProcess> _processes = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private Dictionary<string, Reconciliation>? _reconciliations;
+    private readonly INotificationSender _notifications = notifications ?? new NotificationSender(paths, log);
+    private readonly HashSet<Task> _notificationTasks = [];
 
     public async Task AutostartAsync(CancellationToken cancellationToken)
     {
         log.LogInformation("Loading autostart configuration");
-        var catalog = await JsonFiles.ReadOptionalAsync<ToolCatalog>(paths.CatalogCacheFile, cancellationToken);
-        if (catalog is null)
+        var catalog = (await InstalledSnapshot.ReadAsync(paths, cancellationToken)).Catalog;
+        if (catalog.Tools.Count == 0)
         {
             log.LogWarning("Catalog cache is absent; waiting for updater");
             return;
@@ -53,10 +56,17 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            if (command == "stop")
+            {
+                var response = await StopCoreAsync(name);
+                await LoadReconciliationsAsync(cancellationToken);
+                foreach (var work in _reconciliations!.Values) work.Remaining.Remove(name);
+                await SaveReconciliationsAsync(cancellationToken);
+                return response;
+            }
             return command switch
             {
                 "start" => await StartCoreAsync(name, cancellationToken),
-                "stop" => await StopCoreAsync(name),
                 "restart" => await RestartCoreAsync(name, cancellationToken),
                 "status" => StatusCore(name),
                 _ => $"ERROR unknown command: {command}"
@@ -76,46 +86,47 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
     public async Task<string> PackageUpdatedAsync(
         string packageName,
         bool firstInstall,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? activationId = null)
     {
         Validation.ValidateToolName(packageName);
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var catalog = await JsonFiles.ReadRequiredAsync<ToolCatalog>(paths.CatalogCacheFile, cancellationToken);
-            Validation.ValidateCatalog(catalog);
+            var snapshot = await InstalledSnapshot.ReadAsync(paths, cancellationToken);
+            var catalog = snapshot.Catalog;
             var package = Validation.FindDefinition(catalog, packageName);
             if (!package.Enabled)
             {
                 return "OK package disabled";
             }
 
-            var changed = new List<string>();
-            foreach (var (daemonName, daemon) in package.Daemons)
+            if (activationId is not null && Validation.FindInstalled(snapshot.State, packageName).ActivationId != activationId)
+                return "ERROR stale package activation";
+            await LoadReconciliationsAsync(cancellationToken);
+            if (activationId is null || !_reconciliations!.TryGetValue(packageName, out var work) || work.Id != activationId)
             {
-                if (firstInstall)
-                {
-                    if (daemon.Autostart)
-                    {
-                        var response = await StartCoreAsync(daemonName, cancellationToken);
-                        if (!response.StartsWith("OK", StringComparison.Ordinal))
-                        {
-                            return response;
-                        }
-                        changed.Add(daemonName);
-                    }
-                }
-                else if (daemon.RestartOnUpdate &&
-                         _processes.TryGetValue(daemonName, out var process) &&
-                         process.IsRunning)
-                {
-                    var response = await RestartCoreAsync(daemonName, cancellationToken);
-                    if (!response.StartsWith("OK", StringComparison.Ordinal))
-                    {
-                        return response;
-                    }
-                    changed.Add(daemonName);
-                }
+                work = new Reconciliation(activationId, package.Daemons.Where(pair => firstInstall
+                        ? pair.Value.Autostart
+                        : pair.Value.RestartOnUpdate && _processes.TryGetValue(pair.Key, out var process) &&
+                          process.IsRunning && (activationId is null || process.ActivationId != activationId))
+                    .Select(pair => pair.Key).ToHashSet(StringComparer.OrdinalIgnoreCase));
+                _reconciliations![packageName] = work;
+                await SaveReconciliationsAsync(cancellationToken);
+            }
+            var changed = new List<string>();
+            foreach (var daemonName in work.Remaining.ToArray())
+            {
+                // Keep failed restarts in the work list even if stopping the old process succeeded.
+                // If the last receipt write failed, the process itself proves this activation was applied.
+                var alreadyApplied = activationId is not null && _processes.TryGetValue(daemonName, out var process) &&
+                    process.ActivationId == activationId;
+                var response = alreadyApplied ? "OK already applied" : firstInstall
+                    ? await StartCoreAsync(daemonName, cancellationToken) : await RestartCoreAsync(daemonName, cancellationToken);
+                if (!response.StartsWith("OK", StringComparison.Ordinal)) return response;
+                work.Remaining.Remove(daemonName);
+                await SaveReconciliationsAsync(cancellationToken);
+                changed.Add(daemonName);
             }
 
             return changed.Count == 0
@@ -138,8 +149,7 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var catalog = await JsonFiles.ReadRequiredAsync<ToolCatalog>(paths.CatalogCacheFile, cancellationToken);
-            Validation.ValidateCatalog(catalog);
+            var catalog = (await InstalledSnapshot.ReadAsync(paths, cancellationToken)).Catalog;
             var names = catalog.Tools
                 .SelectMany(pair => pair.Value.Daemons.Keys)
                 .Order(StringComparer.OrdinalIgnoreCase)
@@ -170,27 +180,23 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
             _processes.Remove(name);
         }
 
-        var catalog = await JsonFiles.ReadRequiredAsync<ToolCatalog>(paths.CatalogCacheFile, cancellationToken);
-        Validation.ValidateCatalog(catalog);
+        var snapshot = await InstalledSnapshot.ReadAsync(paths, cancellationToken);
+        var catalog = snapshot.Catalog;
         var (packageName, package, daemon) = Validation.FindDaemon(catalog, name);
         if (!package.Enabled)
         {
             return $"ERROR package is disabled: {packageName}";
         }
 
-        var state = await JsonFiles.ReadRequiredAsync<InstalledState>(paths.InstalledStateFile, cancellationToken);
-        var installed = Validation.FindInstalled(state, packageName);
-        var packageRoot = paths.ResolveUnderRoot(
-            installed.Root ?? Path.Combine("tools", packageName, installed.Version));
-        var executable = ResolveUnder(
-            packageRoot,
-            Validation.ValidateExecutablePath($"daemon {name}", daemon.Executable));
+        var installed = Validation.FindInstalled(snapshot.State, packageName);
+        var packageRoot = snapshot.PackageRoot(paths, packageName);
+        var executable = Validation.ResolveExecutable(packageRoot, $"daemon {name}", daemon.Executable);
         if (!File.Exists(executable))
         {
             return $"ERROR installed executable is missing: {Path.GetRelativePath(paths.Root, executable)}";
         }
 
-        var environment = new ProcessEnvironmentBuilder(paths).Build(daemon.Environment, catalog.Variables);
+        var environment = new ProcessEnvironmentBuilder(paths).Build(daemon.Environment, installed.CatalogVariables ?? catalog.Variables);
 
         log.LogInformation(
             "Starting {Daemon} from {Package} {Version}",
@@ -206,7 +212,8 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
             executable,
             daemon.Arguments,
             environment.Values,
-            Path.Combine(paths.Logs, $"{name}.log"));
+            Path.Combine(paths.Logs, $"{name}.log"),
+            VersionLease.Acquire(packageRoot), installed.ActivationId, NotifyExit);
         _processes.Add(name, process);
         return $"OK running pid={process.ProcessId}";
     }
@@ -261,20 +268,33 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
             : $"OK stopped exit={process.ExitCode}";
     }
 
-    private static string ResolveUnder(string root, string relativePath)
+    private void NotifyExit(DaemonExit exit)
     {
-        var resolved = Path.GetFullPath(relativePath, root);
-        var prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        if (!resolved.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        var task = Task.Run(async () =>
         {
-            throw new InvalidDataException("Executable path escapes the installed package directory.");
-        }
-
-        return resolved;
+            try
+            {
+                var message = $"Daemon exited unexpectedly: {exit.Name}\nPID: {exit.ProcessId}\nExit code: {exit.ExitCode}";
+                if (exit.LastError is not null) message += $"\nStderr: {exit.LastError}";
+                await _notifications.SendAsync("daemon-crash", message);
+            }
+            catch (Exception exception) { log.LogWarning(exception, "Daemon notification failed"); }
+        });
+        lock (_notificationTasks) _notificationTasks.Add(task);
+        _ = task.ContinueWith(completed => { lock (_notificationTasks) _notificationTasks.Remove(completed); }, TaskScheduler.Default);
     }
 
     private static string SingleLine(string message)
         => message.Replace('\r', ' ').Replace('\n', ' ');
+
+    private async Task LoadReconciliationsAsync(CancellationToken cancellationToken)
+    {
+        _reconciliations ??= new(await JsonFiles.ReadOptionalAsync<Dictionary<string, Reconciliation>>(
+            Path.Combine(paths.State, "starter-reconciliations.json"), cancellationToken) ?? [], StringComparer.OrdinalIgnoreCase);
+    }
+
+    private Task SaveReconciliationsAsync(CancellationToken cancellationToken)
+        => JsonFiles.WriteAtomicAsync(Path.Combine(paths.State, "starter-reconciliations.json"), _reconciliations, cancellationToken);
 
     public async ValueTask DisposeAsync()
     {
@@ -293,5 +313,10 @@ internal sealed class ToolSupervisor(ToolDockPaths paths, ILogger<ToolSupervisor
             _gate.Release();
             _gate.Dispose();
         }
+        Task[] pending;
+        lock (_notificationTasks) pending = _notificationTasks.ToArray();
+        await Task.WhenAll(pending);
     }
+
+    private sealed record Reconciliation(string? Id, HashSet<string> Remaining);
 }

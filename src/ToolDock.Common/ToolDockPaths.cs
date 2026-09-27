@@ -1,11 +1,14 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace ToolDock.Common;
 
 public sealed class ToolDockPaths
 {
     public ToolDockPaths(string? root = null)
     {
-        Root = Path.GetFullPath(root ?? Environment.GetEnvironmentVariable("TOOLDOCK_HOME") ??
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ToolDock"));
+        Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root ?? Environment.GetEnvironmentVariable("TOOLDOCK_HOME") ??
+            InstalledRoot() ?? DefaultRoot));
     }
 
     public string Root { get; }
@@ -20,6 +23,26 @@ public sealed class ToolDockPaths
     public string SecretsFile => Path.Combine(Secrets, "secrets.dat");
     public string InstalledStateFile => Path.Combine(State, "installed.json");
     public string CatalogCacheFile => Path.Combine(State, "catalog.json");
+    public string UpdateFailuresFile => Path.Combine(State, "update-failures.json");
+    public string StarterPipeName => "ToolDock.Starter.v1" + InstanceSuffix;
+    public string StarterMutexName => @"Local\ToolDock.Starter" + InstanceSuffix;
+    public string UpdateMutexName => @"Local\ToolDock.Update" + InstanceSuffix;
+
+    private static string DefaultRoot => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ToolDock");
+    private string InstanceSuffix => string.Equals(Root, DefaultRoot, StringComparison.OrdinalIgnoreCase)
+        ? "" : "." + PathIdentity(Root);
+
+    public static string PathIdentity(string path) => Convert.ToHexString(SHA256.HashData(
+        Encoding.UTF8.GetBytes(Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)).ToUpperInvariant())))[..24];
+
+    private static string? InstalledRoot()
+    {
+        var bin = new DirectoryInfo(AppContext.BaseDirectory);
+        return string.Equals(bin.Name, "bin", StringComparison.OrdinalIgnoreCase) &&
+            bin.Parent is { } parent && File.Exists(Path.Combine(parent.FullName, "config.json"))
+                ? parent.FullName : null;
+    }
 
     public void EnsureDirectories()
     {

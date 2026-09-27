@@ -1,3 +1,36 @@
+<#
+.SYNOPSIS
+Installs or updates ToolDock for the current Windows user.
+.DESCRIPTION
+Downloads a ToolDock release, verifies its SHA-256 checksum, stages the complete
+bin directory, then replaces the installed programs. Registers the Starter and
+Updater scheduled tasks, adds bin to the user PATH, and runs the first update.
+Requires Windows x64 and the .NET 10 Runtime. Supports Windows PowerShell 5.1
+and PowerShell 7 (pwsh). Administrator privileges are not required.
+.PARAMETER Repository
+Public GitHub repository containing ToolDock releases, in owner/repository form.
+.PARAMETER CatalogUrl
+Absolute HTTPS URL of the managed-package catalog (tools.json).
+.PARAMETER Version
+Exact ToolDock release tag. Omit to select the latest release. This does not pin
+the versions of managed packages.
+.PARAMETER UpdateIntervalMinutes
+Package update interval in minutes, from 1 to 1440. Defaults to 5.
+.PARAMETER InstallRoot
+Installation directory. Defaults to %LOCALAPPDATA%\ToolDock. Reuse the same
+directory when updating; this parameter does not migrate an existing installation.
+.EXAMPLE
+.\install.ps1 -Repository 'vvladz/ToolDock' -CatalogUrl 'https://example.org/tools.json'
+Installs the latest ToolDock release using your hosted catalog URL.
+.EXAMPLE
+.\install.ps1 -Repository 'vvladz/ToolDock' -CatalogUrl 'https://example.org/tools.json' -InstallRoot 'D:\My Tools\ToolDock' -UpdateIntervalMinutes 15
+Uses a custom directory and checks managed packages every 15 minutes.
+.NOTES
+Run Get-Help .\install.ps1 -Full for all parameters and examples.
+Rerun with the same parameters after an interrupted installation to finish it.
+The installer registers one task pair per user; multiple scheduled installations
+are not supported. Open a new terminal after installation to refresh PATH.
+#>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -19,6 +52,55 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+function Remove-InstallDirectory([string] $Path, [string] $Root) {
+    $resolved = [IO.Path]::GetFullPath($Path)
+    $prefix = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+    if (-not $resolved.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Cleanup path is outside the installation root: $resolved"
+    }
+    if (-not (Test-Path -LiteralPath $resolved)) { return }
+    $item = Get-Item -LiteralPath $resolved -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing to traverse $resolved" }
+    foreach ($child in Get-ChildItem -LiteralPath $resolved -Force) {
+        if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing to traverse $($child.FullName)" }
+        if ($child.PSIsContainer) { Remove-InstallDirectory $child.FullName $Root }
+        else { Remove-Item -LiteralPath $child.FullName -Force }
+    }
+    Remove-Item -LiteralPath $resolved -Force
+}
+
+function Stage-ToolDockBin([string] $PackageBin, [string] $Root) {
+    $next = Join-Path $Root 'bin.next'
+    Remove-InstallDirectory $next $Root
+    New-Item -ItemType Directory -Path $next -Force | Out-Null
+    foreach ($file in Get-ChildItem -LiteralPath $PackageBin -Force) {
+        Copy-Item -LiteralPath $file.FullName -Destination $next -Recurse -Force
+    }
+    $previousBin = Join-Path $Root 'bin'
+    if (-not (Test-Path -LiteralPath $previousBin)) { $previousBin = Join-Path $Root 'bin.previous' }
+    if (Test-Path -LiteralPath $previousBin) {
+        foreach ($shim in Get-ChildItem -LiteralPath $previousBin -Filter '*.cmd' -File) {
+            if ($shim.Name -ine 'tdctl.cmd') { Copy-Item -LiteralPath $shim.FullName -Destination $next -Force }
+        }
+    }
+}
+
+function Switch-ToolDockBin([string] $Root) {
+    $live = Join-Path $Root 'bin'
+    $next = Join-Path $Root 'bin.next'
+    $previous = Join-Path $Root 'bin.previous'
+    foreach ($name in @('ToolDock.Starter.exe', 'ToolDock.Updater.exe', 'ToolDock.Client.exe', 'tdctl.cmd')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $next $name) -PathType Leaf)) {
+            throw "Staged bin is missing $name."
+        }
+    }
+    if (Test-Path -LiteralPath $live) {
+        Remove-InstallDirectory $previous $Root
+        Move-Item -LiteralPath $live -Destination $previous
+    }
+    Move-Item -LiteralPath $next -Destination $live
+}
 
 if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
     throw 'ToolDock can only be installed on Windows.'
@@ -100,6 +182,9 @@ try {
         throw 'Release package is missing a ToolDock executable or tdctl.cmd.'
     }
 
+    # Finish every release copy before stopping the installed programs.
+    Stage-ToolDockBin $packageBin $installPath
+
     $starterTaskName = 'ToolDock Starter'
     $updaterTaskName = 'ToolDock Updater'
     Get-ScheduledTask -TaskName $starterTaskName, $updaterTaskName -ErrorAction SilentlyContinue |
@@ -119,19 +204,17 @@ try {
         } | Stop-Process -Force
     }
 
-    New-Item -ItemType Directory -Path $binPath -Force | Out-Null
+    Switch-ToolDockBin $installPath
     New-Item -ItemType Directory -Path (Join-Path $installPath 'tools') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $installPath 'state') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $installPath 'logs') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $installPath 'temp') -Force | Out-Null
-    Copy-Item -Path (Join-Path $packageBin '*') -Destination $binPath -Force
-    foreach ($legacyName in @('starter', 'updater')) {
-        foreach ($extension in @('.exe', '.dll', '.deps.json', '.runtimeconfig.json')) {
-            Remove-Item -LiteralPath (Join-Path $binPath "$legacyName$extension") -Force -ErrorAction SilentlyContinue
-        }
-    }
-
-    $config = [ordered]@{ catalogUrl = $CatalogUrl } | ConvertTo-Json
+    $configPath = Join-Path $installPath 'config.json'
+    $settings = if (Test-Path -LiteralPath $configPath) {
+        Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+    } else { [pscustomobject]@{} }
+    $settings | Add-Member -NotePropertyName catalogUrl -NotePropertyValue $CatalogUrl -Force
+    $config = $settings | ConvertTo-Json -Depth 10
     $utf8NoBom = New-Object Text.UTF8Encoding($false)
     [IO.File]::WriteAllText((Join-Path $installPath 'config.json'), $config + [Environment]::NewLine, $utf8NoBom)
 
@@ -188,13 +271,15 @@ try {
         -Force | Out-Null
 
     Start-ScheduledTask -TaskName $starterTaskName
-    $firstUpdate = Start-Process -FilePath (Join-Path $binPath 'ToolDock.Updater.exe') -Wait -PassThru
+    $firstUpdate = Start-Process -FilePath (Join-Path $binPath 'ToolDock.Updater.exe') -WindowStyle Hidden -Wait -PassThru
     if ($firstUpdate.ExitCode -ne 0) {
         Write-Warning "Initial update returned exit code $($firstUpdate.ExitCode). See $installPath\logs\ToolDock.Updater.log."
     }
 
     Write-Host "ToolDock $($release.tag_name) installed in $installPath."
     Write-Host 'Open a new terminal to use managed tool commands from PATH.'
+    try { Remove-InstallDirectory (Join-Path $installPath 'bin.previous') $installPath }
+    catch { Write-Warning "Old bin cleanup deferred: $($_.Exception.Message)" }
 }
 finally {
     if (Test-Path -LiteralPath $temporaryRoot) {

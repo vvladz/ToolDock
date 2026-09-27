@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/ToolDock.Common/ToolDock.Common.csproj" />
+    <ProjectReference Include="../../src/ToolDock.Updating/ToolDock.Updating.csproj" />
+    <ProjectReference Include="../../src/ToolDock.Starter/ToolDock.Starter.csproj" />
+    <ProjectReference Include="../../src/ToolDock.Client/ToolDock.Client.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../src/ToolDock.Updater/ToolDock.Updater.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

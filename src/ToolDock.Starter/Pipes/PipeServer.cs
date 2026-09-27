@@ -6,14 +6,14 @@ using ToolDock.Starter.Supervisor;
 
 namespace ToolDock.Starter.Pipes;
 
-internal sealed class PipeServer(ToolSupervisor supervisor, ILogger<PipeServer> log)
+internal sealed class PipeServer(ToolSupervisor supervisor, ILogger<PipeServer> log, string pipeName)
 {
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        log.LogInformation("Pipe server started: {PipeName}", StarterClient.PipeName);
+        log.LogInformation("Pipe server started: {PipeName}", pipeName);
         while (!cancellationToken.IsCancellationRequested)
         {
-            await using var pipe = CurrentUserPipe.CreateServer(StarterClient.PipeName);
+            await using var pipe = CurrentUserPipe.CreateServer(pipeName);
 
             try
             {
@@ -61,6 +61,11 @@ internal sealed class PipeServer(ToolSupervisor supervisor, ILogger<PipeServer> 
                 packageName,
                 firstInstall: change == "installed",
                 cancellationToken);
+        }
+        if (parts is ["package-updated", var package, var kind, var id] &&
+            kind is "installed" or "updated" && Guid.TryParseExact(id, "N", out _))
+        {
+            return supervisor.PackageUpdatedAsync(package, kind == "installed", cancellationToken, id);
         }
         if (parts is [var command, var name])
         {

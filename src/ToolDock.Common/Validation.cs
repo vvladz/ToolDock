@@ -66,6 +66,7 @@ public static partial class Validation
             foreach (var (commandName, command) in definition.Commands)
             {
                 ValidateToolName(commandName);
+                ValidateCommandName(commandName);
                 if (!commandNames.Add(commandName))
                 {
                     throw new InvalidDataException($"Duplicate command name differs only by case: {commandName}");
@@ -147,6 +148,28 @@ public static partial class Validation
         }
 
         return normalized;
+    }
+
+    public static void ValidateCommandName(string name)
+    {
+        ValidateToolName(name);
+        if (new[] { "tdctl", "ToolDock.Client", "ToolDock.Starter", "ToolDock.Updater", "starter", "updater" }
+            .Contains(name, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"Command name is reserved by ToolDock: {name}");
+        }
+    }
+
+    public static string ResolveExecutable(string root, string owner, string relativePath)
+    {
+        var normalized = ValidateExecutablePath(owner, relativePath);
+        var resolved = Path.GetFullPath(normalized, root);
+        var prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!resolved.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"Executable path for {owner} escapes the installed directory.");
+        }
+        return resolved;
     }
 
     public static ToolDefinition FindDefinition(ToolCatalog catalog, string name)

@@ -3,6 +3,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="ToolDock.IntegrationTests" />
     <ProjectReference Include="..\ToolDock.Common\ToolDock.Common.csproj" />
   </ItemGroup>
 </Project>

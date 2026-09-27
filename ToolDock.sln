@@ -14,6 +14,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.Client", "src\Tool
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.SmokeTool", "tests\ToolDock.SmokeTool\ToolDock.SmokeTool.csproj", "{11D8182E-AF95-4244-91A4-BF45951C0DCE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ToolDock.IntegrationTests", "tests\ToolDock.IntegrationTests\ToolDock.IntegrationTests.csproj", "{42794FA1-AAE4-4126-B269-CD4250F05523}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -44,5 +46,9 @@ Global
 		{11D8182E-AF95-4244-91A4-BF45951C0DCE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{11D8182E-AF95-4244-91A4-BF45951C0DCE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{11D8182E-AF95-4244-91A4-BF45951C0DCE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{42794FA1-AAE4-4126-B269-CD4250F05523}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{42794FA1-AAE4-4126-B269-CD4250F05523}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{42794FA1-AAE4-4126-B269-CD4250F05523}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{42794FA1-AAE4-4126-B269-CD4250F05523}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

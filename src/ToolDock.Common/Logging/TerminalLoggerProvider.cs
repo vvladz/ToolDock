@@ -25,7 +25,7 @@ public sealed class TerminalLoggerProvider : ILoggerProvider
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            if (!IsEnabled(logLevel))
+            if (!IsEnabled(logLevel) || eventId.Name == "UpdateOutcome")
             {
                 return;
             }

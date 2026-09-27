@@ -24,6 +24,10 @@ $starterLogPath = Join-Path $testRoot 'logs\ToolDock.Starter.log'
 $clientLogPath = Join-Path $testRoot 'logs\ToolDock.Client.log'
 $previousHome = $env:TOOLDOCK_HOME
 $starterProcess = $null
+$hasher = [Security.Cryptography.SHA256]::Create()
+try { $rootHash = -join ($hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($testRoot.ToUpperInvariant())) | ForEach-Object { $_.ToString('X2') }) }
+finally { $hasher.Dispose() }
+$pipeName = 'ToolDock.Starter.v1.' + $rootHash.Substring(0, 24)
 
 function Write-Utf8Json([string] $Path, [object] $Value) {
     $json = $Value | ConvertTo-Json -Depth 10
@@ -33,7 +37,7 @@ function Write-Utf8Json([string] $Path, [object] $Value) {
 function Invoke-Starter([string] $Command) {
     $pipe = [IO.Pipes.NamedPipeClientStream]::new(
         '.',
-        'ToolDock.Starter.v1',
+        $pipeName,
         [IO.Pipes.PipeDirection]::InOut)
     try {
         $pipe.Connect(5000)
@@ -173,7 +177,7 @@ try {
         throw 'Client log contains the resolved secret.'
     }
 
-    $starterProcess = Start-Process -FilePath $starter -PassThru
+    $starterProcess = Start-Process -FilePath $starter -WindowStyle Hidden -PassThru
 
     $status = $null
     $lastConnectError = $null

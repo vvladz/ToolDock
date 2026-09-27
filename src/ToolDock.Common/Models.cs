@@ -6,6 +6,8 @@ namespace ToolDock.Common;
 public sealed class ToolDockConfig
 {
     public required string CatalogUrl { get; init; }
+    public string? NotificationCommand { get; init; }
+    public int NotificationTimeoutSeconds { get; init; } = 10;
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -140,6 +142,9 @@ internal sealed class EnvironmentValueJsonConverter : JsonConverter<EnvironmentV
 public sealed class InstalledState
 {
     public Dictionary<string, InstalledTool> Tools { get; init; } = [];
+    // Published with the version paths in one atomic write. Null denotes legacy state.
+    public ToolCatalog? ActiveCatalog { get; set; }
+    public List<string> GeneratedCommands { get; set; } = [];
 }
 
 public sealed class InstalledTool
@@ -151,8 +156,21 @@ public sealed class InstalledTool
 
     public bool EntryPointsTracked { get; init; }
     public List<string> Commands { get; init; } = [];
+    public string? Repository { get; init; }
+    public string? Asset { get; init; }
+    public string? ActivationId { get; init; }
+    public Dictionary<string, string>? CatalogVariables { get; set; }
+    public PendingReconciliation? PendingReconciliation { get; set; }
 
     // Legacy state stored the path of the package's single executable.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Path { get; init; }
+}
+
+public sealed class PendingReconciliation
+{
+    public required string Id { get; init; }
+    public bool FirstInstall { get; init; }
+    public string? PreviousVersion { get; init; }
+    public bool VersionChanged { get; init; }
 }

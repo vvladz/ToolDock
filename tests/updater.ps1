@@ -10,6 +10,9 @@ $ErrorActionPreference = 'Stop'
 $updater = (Resolve-Path -LiteralPath $UpdaterPath).Path
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("ToolDock-updater-test-" + [Guid]::NewGuid().ToString('N'))
 $previousHome = $env:TOOLDOCK_HOME
+$hasher = [Security.Cryptography.SHA256]::Create()
+try { $rootHash = -join ($hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($testRoot.ToUpperInvariant())) | ForEach-Object { $_.ToString('X2') }) }
+finally { $hasher.Dispose() }
 
 try {
     New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
@@ -20,7 +23,7 @@ try {
         [Text.UTF8Encoding]::new($false))
 
     $env:TOOLDOCK_HOME = $testRoot
-    $process = Start-Process -FilePath $updater -Wait -PassThru
+    $process = Start-Process -FilePath $updater -WindowStyle Hidden -Wait -PassThru
     $exitCode = $process.ExitCode
     if ($exitCode -ne 1) {
         throw "Updater returned $exitCode instead of the handled failure exit code 1."
@@ -34,12 +37,12 @@ try {
         throw 'Updater released its mutex from a different thread.'
     }
 
-    $mutex = [Threading.Mutex]::new($false, 'Local\ToolDock.Update')
+    $mutex = [Threading.Mutex]::new($false, ('Local\ToolDock.Update.' + $rootHash.Substring(0, 24)))
     try {
         if (-not $mutex.WaitOne(0)) {
             throw 'Test could not acquire the update mutex.'
         }
-        $blocked = Start-Process -FilePath $updater -Wait -PassThru
+        $blocked = Start-Process -FilePath $updater -WindowStyle Hidden -Wait -PassThru
         if ($blocked.ExitCode -ne 0) {
             throw "Updater returned $($blocked.ExitCode) while another update owned the mutex."
         }
