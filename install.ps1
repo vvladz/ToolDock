@@ -17,7 +17,7 @@ the versions of managed packages.
 .PARAMETER UpdateIntervalMinutes
 Package update interval in minutes, from 1 to 1440. Defaults to 5.
 .PARAMETER InstallRoot
-Installation directory. Defaults to %LOCALAPPDATA%\ToolDock. Reuse the same
+Installation directory. Defaults to ~/.tooldock. Reuse the same
 directory when updating; this parameter does not migrate an existing installation.
 .EXAMPLE
 .\install.ps1 -Repository 'vvladz/ToolDock' -CatalogUrl 'https://example.org/tools.json'
@@ -47,7 +47,7 @@ param(
     [int] $UpdateIntervalMinutes = 5,
 
     [ValidateNotNullOrEmpty()]
-    [string] $InstallRoot = (Join-Path $env:LOCALAPPDATA 'ToolDock')
+    [string] $InstallRoot = (Join-Path $HOME '.tooldock')
 )
 
 Set-StrictMode -Version Latest
@@ -68,6 +68,14 @@ function Remove-InstallDirectory([string] $Path, [string] $Root) {
         else { Remove-Item -LiteralPath $child.FullName -Force }
     }
     Remove-Item -LiteralPath $resolved -Force
+}
+
+function Put-PathEntryFirst([string] $Value, [string] $Entry) {
+    $otherEntries = @($Value -split ';' | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_) -and
+        -not [string]::Equals($_.TrimEnd('\'), $Entry.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)
+    })
+    return (@($Entry) + $otherEntries) -join ';'
 }
 
 function Stage-ToolDockBin([string] $PackageBin, [string] $Root) {
@@ -219,17 +227,11 @@ try {
     [IO.File]::WriteAllText((Join-Path $installPath 'config.json'), $config + [Environment]::NewLine, $utf8NoBom)
 
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $pathEntries = @($userPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    $hasBinPath = $pathEntries | Where-Object {
-        [string]::Equals($_.TrimEnd('\'), $binPath.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)
-    }
-    if (-not $hasBinPath) {
-        $newUserPath = (@($pathEntries) + $binPath) -join ';'
+    $newUserPath = Put-PathEntryFirst $userPath $binPath
+    if ($newUserPath -ne $userPath) {
         [Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
     }
-    if (-not (($env:Path -split ';') -contains $binPath)) {
-        $env:Path = "$env:Path;$binPath"
-    }
+    $env:Path = Put-PathEntryFirst $env:Path $binPath
 
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     $principal = New-ScheduledTaskPrincipal -UserId $identity -LogonType Interactive -RunLevel Limited

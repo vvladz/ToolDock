@@ -49,6 +49,21 @@ internal static partial class Suite
 
     private static Task ValidationAsync()
     {
+        var previousHome = Environment.GetEnvironmentVariable("TOOLDOCK_HOME");
+        try
+        {
+            Environment.SetEnvironmentVariable("TOOLDOCK_HOME", null);
+            var expectedRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".tooldock");
+            var paths = new ToolDockPaths();
+            var suffix = "." + ToolDockPaths.PathIdentity(expectedRoot);
+            Require(string.Equals(paths.Root, expectedRoot, StringComparison.OrdinalIgnoreCase), "Wrong default installation root.");
+            Require(paths.StarterPipeName == "ToolDock.Starter.v1" + suffix &&
+                paths.StarterMutexName == @"Local\ToolDock.Starter" + suffix &&
+                paths.UpdateMutexName == @"Local\ToolDock.Update" + suffix,
+                "Default installation does not use root-specific IPC names.");
+        }
+        finally { Environment.SetEnvironmentVariable("TOOLDOCK_HOME", previousHome); }
+
         using var f = new Fixture();
         foreach (var name in new[] { "tdctl", "TDCTL", "ToolDock.Client" })
             Reject(() => Validation.ValidateCatalog(new ToolCatalog { Tools = new() { ["app"] = Fixture.Definition(command: name) } }));

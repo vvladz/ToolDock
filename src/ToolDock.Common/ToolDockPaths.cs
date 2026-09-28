@@ -29,9 +29,8 @@ public sealed class ToolDockPaths
     public string UpdateMutexName => @"Local\ToolDock.Update" + InstanceSuffix;
 
     private static string DefaultRoot => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ToolDock");
-    private string InstanceSuffix => string.Equals(Root, DefaultRoot, StringComparison.OrdinalIgnoreCase)
-        ? "" : "." + PathIdentity(Root);
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".tooldock");
+    private string InstanceSuffix => "." + PathIdentity(Root);
 
     public static string PathIdentity(string path) => Convert.ToHexString(SHA256.HashData(
         Encoding.UTF8.GetBytes(Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)).ToUpperInvariant())))[..24];

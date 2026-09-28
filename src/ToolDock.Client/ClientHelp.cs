@@ -31,7 +31,7 @@ internal static class ClientHelp
           tdctl logs ToolDock.Updater --lines 50
 
         TOOLDOCK_HOME overrides the installation root; otherwise an installed client
-        uses config.json beside its bin directory, then %LOCALAPPDATA%\ToolDock.
+        uses config.json beside its bin directory, then ~/.tooldock.
         Exit codes: 0 success, 1 operation failed, 2 invalid usage, 130 cancelled.
         exec returns the child process exit code.
         """;

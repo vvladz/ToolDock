@@ -41,13 +41,13 @@ The script can also be launched explicitly with `pwsh -NoProfile -File .\install
 | `-Repository` | Required | Public ToolDock release repository, in `owner/repository` form |
 | `-CatalogUrl` | Required | Absolute HTTPS URL of your JSON package catalog |
 | `-Version` | Latest release | Exact ToolDock release tag; does not pin managed packages |
-| `-InstallRoot` | `%LOCALAPPDATA%\ToolDock` | Installation directory; reuse it when rerunning the installer |
+| `-InstallRoot` | `~/.tooldock` | Installation directory; reuse it when rerunning the installer |
 | `-UpdateIntervalMinutes` | `5` | Package check interval, from 1 to 1,440 minutes |
 
 The installer:
 
-- places ToolDock in `%LOCALAPPDATA%\ToolDock`;
-- adds `%LOCALAPPDATA%\ToolDock\bin` to the user `PATH`;
+- places ToolDock in `~/.tooldock`;
+- puts `~/.tooldock/bin` first in the user `PATH`;
 - creates the `ToolDock Starter` and `ToolDock Updater` scheduled tasks;
 - starts the supervisor and performs the first update;
 - verifies the release archive against its published SHA-256 file.
@@ -184,13 +184,13 @@ Fields:
 Versions are installed side by side and exposed through a `current` directory junction:
 
 ```text
-%LOCALAPPDATA%\ToolDock\tools\farshell\
+~/.tooldock/tools/farshell/
 ├── v1.0.0--<source-id>\
 ├── v1.1.0--<source-id>\
 └── current\        directory junction → v1.1.0--<source-id>
 ```
 
-Each command gets a shim in `%LOCALAPPDATA%\ToolDock\bin`. The shim delegates execution to `ToolDock.Client.exe`, which resolves the installed executable and its environment, preserves the calling terminal streams, and returns the child exit code. Daemons are started from the exact installed-version directory recorded in ToolDock state.
+Each command gets a shim in `~/.tooldock/bin`. The shim delegates execution to `ToolDock.Client.exe`, which resolves the installed executable and its environment, preserves the calling terminal streams, and returns the child exit code. Daemons are started from the exact installed-version directory recorded in ToolDock state.
 
 Names are case-insensitive and must be unique within each namespace. ToolDock reserves the command names `tdctl`, `ToolDock.Client`, `ToolDock.Starter`, `ToolDock.Updater`, `starter`, and `updater`.
 
@@ -219,8 +219,8 @@ Environment entries support three forms:
 ```
 
 - literals live directly in process definitions in the public catalog;
-- variables are catalog-wide plaintext values or user-scoped plaintext values in `%LOCALAPPDATA%\ToolDock\variables.json`;
-- secrets are user-scoped named values protected with Windows DPAPI `CurrentUser` in `%LOCALAPPDATA%\ToolDock\secrets\secrets.dat`.
+- variables are catalog-wide plaintext values or user-scoped plaintext values in `~/.tooldock/variables.json`;
+- secrets are user-scoped named values protected with Windows DPAPI `CurrentUser` in `~/.tooldock/secrets/secrets.dat`.
 
 `{ "variable": "name" }` first resolves `name` from the catalog's top-level `variables` object, then falls back to the current user's variable store. A catalog value therefore overrides a user value with the same name. Variables and secrets are shared by all commands and daemons. They are not added to the global Windows environment; ToolDock injects them only into configured child processes. `tdctl variable status` describes the user store, so a user variable shadowed by the catalog is reported as unused.
 
@@ -282,7 +282,7 @@ After a package update, the update engine notifies the starter. The starter alon
 
 ## Logs
 
-Logs are stored in `%LOCALAPPDATA%\ToolDock\logs`:
+Logs are stored in `~/.tooldock/logs`:
 
 - `ToolDock.Starter.log`: supervisor and Named Pipe diagnostics;
 - `ToolDock.Updater.log`: scheduled and interactive update diagnostics;
@@ -334,7 +334,7 @@ See [Notification setup and handler contract](docs/notifications.md) for a compl
 
 | Symptom | Action |
 |---|---|
-| `tdctl` is not recognized | Open a new terminal, or run `& "$env:LOCALAPPDATA\ToolDock\bin\ToolDock.Client.exe" --help` (use your custom root if applicable) |
+| `tdctl` is not recognized | Open a new terminal, or run `& "$HOME\.tooldock\bin\ToolDock.Client.exe" --help` (use your custom root if applicable) |
 | `Starter is unavailable` | Check `Get-ScheduledTask -TaskName 'ToolDock Starter'`, run `Start-ScheduledTask -TaskName 'ToolDock Starter'`, then inspect `tdctl logs ToolDock.Starter` |
 | Commands use another installation | Check `$env:TOOLDOCK_HOME` and `Get-Command tdctl`; the environment override wins over executable location |
 | A variable or secret is missing | Use `tdctl variable status` / `tdctl secret status`, set the missing value, and retry the command or daemon start |

@@ -10,6 +10,8 @@ $ErrorActionPreference = 'Stop'
 $sentinel = 'STOP_AFTER_RELEASE_ASSET_SELECTION'
 $installer = (Resolve-Path -LiteralPath $InstallerPath).Path
 $installRoot = Join-Path ([IO.Path]::GetTempPath()) ("ToolDock-installer-test-" + [Guid]::NewGuid().ToString('N'))
+$expectedDefaultRoot = [IO.Path]::GetFullPath((Join-Path $HOME '.tooldock'))
+$verifyDefaultRoot = $false
 
 function Invoke-RestMethod {
     return [pscustomobject]@{
@@ -28,6 +30,9 @@ function Invoke-RestMethod {
 }
 
 function Invoke-WebRequest {
+    if ($verifyDefaultRoot -and -not [string]::Equals($installPath, $expectedDefaultRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Installer chose $installPath instead of $expectedDefaultRoot."
+    }
     throw $sentinel
 }
 
@@ -49,6 +54,18 @@ try {
         }
     }
 
+    $verifyDefaultRoot = $true
+    try {
+        & $installer -Repository 'example/ToolDock' -CatalogUrl 'https://example.org/tools.json'
+        throw 'Installer unexpectedly continued past the download boundary.'
+    }
+    catch {
+        if ($_.Exception.Message -ne $sentinel) {
+            throw
+        }
+    }
+    $verifyDefaultRoot = $false
+
     # Exercise the actual staging/switch functions without changing scheduled tasks or user PATH.
     $parseErrors = $null
     $tokens = $null
@@ -57,9 +74,14 @@ try {
     $definitions = $ast.FindAll({
         param($node)
         $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-            $node.Name -in @('Remove-InstallDirectory', 'Stage-ToolDockBin', 'Switch-ToolDockBin')
+            $node.Name -in @('Remove-InstallDirectory', 'Put-PathEntryFirst', 'Stage-ToolDockBin', 'Switch-ToolDockBin')
     }, $false)
     foreach ($definition in $definitions) { . ([scriptblock]::Create($definition.Extent.Text)) }
+    $orderedPath = Put-PathEntryFirst 'C:\Previous\bin;C:\New\bin;C:\Other;C:\NEW\bin\' 'C:\New\bin'
+    if ($orderedPath -cne 'C:\New\bin;C:\Previous\bin;C:\Other' -or
+        (Put-PathEntryFirst $orderedPath 'C:\New\bin') -cne $orderedPath) {
+        throw 'Installer did not prioritize the selected bin directory without duplicates.'
+    }
     $releaseBin = Join-Path $installRoot 'release'
     $liveBin = Join-Path $installRoot 'bin'
     New-Item -ItemType Directory -Path $releaseBin, $liveBin -Force | Out-Null
