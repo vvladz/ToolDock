@@ -51,9 +51,9 @@ The installer:
 - creates the `ToolDock Starter` and `ToolDock Updater` scheduled tasks;
 - starts the supervisor and performs the first update;
 - verifies the release archive against its published SHA-256 file;
-- places `install.ps1` and a small `update.ps1` launcher in `<InstallRoot>` for future ToolDock updates.
+- generates `update.ps1` in `<InstallRoot>` for future ToolDock updates.
 
-Run the installed launcher to update ToolDock itself. It runs the installer with the repository, catalog URL, and interval saved in `config.json` and targets its own installation directory:
+Run the installed launcher to update ToolDock itself. It downloads the current `install.ps1` from the configured GitHub repository and runs it with the repository, catalog URL, and interval saved in `config.json`, targeting its own installation directory:
 
 ```powershell
 & "$HOME\.tooldock\update.ps1"
@@ -61,6 +61,13 @@ Run the installed launcher to update ToolDock itself. It runs the installer with
 ```
 
 For a custom root, run its `update.ps1` instead. You can also rerun `install.ps1` with the same root to recover an interrupted installation.
+
+For an installation with the older `update.ps1` that uses a local `install.ps1`, run the current installer once from GitHub using the same installation root. It will replace the old launcher with the generated one. The saved settings in `config.json` supply the repository, catalog URL, and interval:
+
+```powershell
+& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/vvladz/ToolDock/HEAD/install.ps1'))) `
+    -InstallRoot "$HOME\.tooldock"
+```
 
 For a custom directory and a 15-minute interval:
 
@@ -72,7 +79,7 @@ For a custom directory and a 15-minute interval:
 
 The executables discover `config.json` beside their `bin` directory, including in a new terminal or sign-in session. `TOOLDOCK_HOME` takes precedence over this discovery. Separate roots have separate runtime pipes and mutexes, but the installer registers a single pair of scheduled tasks for the user. Installing to another root replaces those task registrations; it does not migrate existing packages, variables, or secrets. Use the same root for upgrades.
 
-Self-installation prepares a complete `bin.next`, preserves command shims, stops ToolDock, and switches directories through `bin.previous`. If interrupted, rerun the installer to finish the installation. If installer-script refresh was interrupted, `update.ps1` can run the retained `install.previous.ps1`. Existing notification settings are preserved.
+Self-installation prepares a complete `bin.next`, preserves command shims, stops ToolDock, and switches directories through `bin.previous`. If interrupted, rerun the installer to finish the installation. Existing notification settings are preserved.
 
 ### First use
 

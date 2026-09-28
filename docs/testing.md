@@ -19,7 +19,7 @@ To rerun a scenario, pass part of its printed name:
 dotnet run --project tests/ToolDock.IntegrationTests -c Release --no-build -- "notification command"
 ```
 
-Installer tests exercise release asset selection, help, complete staging, copy failure, directory switching, interrupted-install recovery, saved settings, and installer refresh through `update.ps1`. Downloads are stubbed; they do not register scheduled tasks, edit the user `PATH`, or replace an installed ToolDock.
+Installer tests exercise release asset selection, help, complete staging, copy failure, directory switching, interrupted-install recovery, and the generated `update.ps1` with saved settings. Downloads are stubbed; they do not register scheduled tasks, edit the user `PATH`, or replace an installed ToolDock.
 
 ## Test published executables
 

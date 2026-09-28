@@ -9,15 +9,23 @@ $ErrorActionPreference = 'Stop'
 
 $sentinel = 'STOP_AFTER_RELEASE_ASSET_SELECTION'
 $installer = (Resolve-Path -LiteralPath $InstallerPath).Path
-$updateLauncher = Join-Path (Split-Path -Parent $installer) 'update.ps1'
 $installRoot = Join-Path ([IO.Path]::GetTempPath()) ("ToolDock-installer-test-" + [Guid]::NewGuid().ToString('N'))
 $expectedDefaultRoot = [IO.Path]::GetFullPath((Join-Path $HOME '.tooldock'))
 $verifyDefaultRoot = $false
 $verifySavedSettings = $false
+$republishDuringDownload = $false
 $expectedReleaseUri = 'https://api.github.com/repos/example/ToolDock/releases/latest'
+$expectedInstallerUri = 'https://raw.githubusercontent.com/example/ToolDock/HEAD/install.ps1'
+$expectedCatalogUrl = 'https://example.org/saved.json'
+$expectedInterval = 17
 
 function Invoke-RestMethod {
     param([string] $Uri)
+    if ($Uri -like 'https://raw.githubusercontent.com/*/HEAD/install.ps1') {
+        if ($Uri -cne $expectedInstallerUri) { throw "Wrong installer source: $Uri" }
+        if ($republishDuringDownload) { Publish-UpdateScript $installRoot }
+        return [IO.File]::ReadAllText($installer)
+    }
     if ($verifySavedSettings -and $Uri -cne $expectedReleaseUri) {
         throw "Saved repository was not used: $Uri"
     }
@@ -42,7 +50,7 @@ function Invoke-WebRequest {
     }
     if ($verifySavedSettings -and
         (-not [string]::Equals($installPath, $installRoot, [StringComparison]::OrdinalIgnoreCase) -or
-         $CatalogUrl -cne 'https://example.org/saved.json' -or $UpdateIntervalMinutes -ne 17)) {
+         $CatalogUrl -cne $expectedCatalogUrl -or $UpdateIntervalMinutes -ne $expectedInterval)) {
         throw 'Installed update.ps1 did not use its root and saved settings.'
     }
     throw $sentinel
@@ -78,35 +86,7 @@ try {
     }
     $verifyDefaultRoot = $false
 
-    New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
-    [IO.File]::WriteAllText((Join-Path $installRoot 'config.json'),
-        '{"catalogUrl":"https://example.org/saved.json","repository":"example/ToolDock","updateIntervalMinutes":17}')
-    $updateScript = Join-Path $installRoot 'update.ps1'
-    Copy-Item -LiteralPath $installer -Destination (Join-Path $installRoot 'install.ps1')
-    Copy-Item -LiteralPath $updateLauncher -Destination $updateScript
-    $verifySavedSettings = $true
-    try {
-        & $updateScript
-        throw 'Installed update.ps1 unexpectedly continued past the download boundary.'
-    }
-    catch {
-        if ($_.Exception.Message -ne $sentinel) { throw }
-    }
-    $verifySavedSettings = $false
-    Move-Item -LiteralPath (Join-Path $installRoot 'install.ps1') -Destination (Join-Path $installRoot 'install.previous.ps1')
-    $expectedReleaseUri = 'https://api.github.com/repos/example/ToolDock/releases/tags/v-selected'
-    $verifySavedSettings = $true
-    try {
-        & $updateScript -Version v-selected
-        throw 'Launcher unexpectedly continued past the download boundary during recovery.'
-    }
-    catch {
-        if ($_.Exception.Message -ne $sentinel) { throw }
-    }
-    $verifySavedSettings = $false
-    $expectedReleaseUri = 'https://api.github.com/repos/example/ToolDock/releases/latest'
-
-    # Exercise the actual staging/switch functions without changing scheduled tasks or user PATH.
+    # Exercise installer functions without changing scheduled tasks or user PATH.
     $parseErrors = $null
     $tokens = $null
     $ast = [Management.Automation.Language.Parser]::ParseFile($installer, [ref]$tokens, [ref]$parseErrors)
@@ -114,9 +94,80 @@ try {
     $definitions = $ast.FindAll({
         param($node)
         $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-            $node.Name -in @('Remove-InstallDirectory', 'Put-PathEntryFirst', 'Stage-ToolDockBin', 'Switch-ToolDockBin', 'Publish-InstallerFile', 'Publish-InstallerScripts')
+            $node.Name -in @('Remove-InstallDirectory', 'Put-PathEntryFirst', 'Stage-ToolDockBin', 'Switch-ToolDockBin', 'Publish-UpdateScript')
     }, $false)
     foreach ($definition in $definitions) { . ([scriptblock]::Create($definition.Extent.Text)) }
+    New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+    $configPath = Join-Path $installRoot 'config.json'
+    [IO.File]::WriteAllText($configPath,
+        '{"catalogUrl":"https://example.org/saved.json","repository":"example/ToolDock","updateIntervalMinutes":17}')
+    $updateScript = Join-Path $installRoot 'update.ps1'
+    Publish-UpdateScript $installRoot
+    if (-not (Test-Path -LiteralPath $updateScript -PathType Leaf) -or
+        (Test-Path -LiteralPath (Join-Path $installRoot 'install.ps1'))) {
+        throw 'Installer did not generate a standalone update.ps1.'
+    }
+    $generatedLauncher = [IO.File]::ReadAllText($updateScript)
+
+    $verifySavedSettings = $true
+    try {
+        & $updateScript
+        throw 'Generated update.ps1 unexpectedly continued past the download boundary.'
+    }
+    catch {
+        if ($_.Exception.Message -ne $sentinel) { throw }
+    }
+
+    # The launcher reads config.json on every run and supports explicit overrides.
+    [IO.File]::WriteAllText($configPath,
+        '{"catalogUrl":"https://example.org/changed.json","repository":"example/ToolDock","updateIntervalMinutes":23}')
+    $expectedCatalogUrl = 'https://example.org/changed.json'
+    $expectedInterval = 23
+    $expectedReleaseUri = 'https://api.github.com/repos/example/ToolDock/releases/tags/v-selected'
+    try {
+        & $updateScript -Version v-selected
+        throw 'Generated update.ps1 unexpectedly continued past the download boundary.'
+    }
+    catch {
+        if ($_.Exception.Message -ne $sentinel) { throw }
+    }
+    $expectedInstallerUri = 'https://raw.githubusercontent.com/alternate/ToolDock/HEAD/install.ps1'
+    $expectedReleaseUri = 'https://api.github.com/repos/alternate/ToolDock/releases/latest'
+    $expectedCatalogUrl = 'https://example.org/override.json'
+    $expectedInterval = 31
+    try {
+        & $updateScript -Repository 'alternate/ToolDock' -CatalogUrl $expectedCatalogUrl -UpdateIntervalMinutes $expectedInterval
+        throw 'Generated update.ps1 unexpectedly continued past the download boundary.'
+    }
+    catch {
+        if ($_.Exception.Message -ne $sentinel) { throw }
+    }
+    $verifySavedSettings = $false
+    $expectedInstallerUri = 'https://raw.githubusercontent.com/example/ToolDock/HEAD/install.ps1'
+    [IO.File]::WriteAllText($updateScript, $generatedLauncher + '# old launcher' + [Environment]::NewLine)
+    $republishDuringDownload = $true
+    try {
+        & $updateScript
+        throw 'Generated update.ps1 unexpectedly continued past the download boundary.'
+    }
+    catch {
+        if ($_.Exception.Message -ne $sentinel) { throw }
+    }
+    $republishDuringDownload = $false
+    if ([IO.File]::ReadAllText($updateScript) -cne $generatedLauncher -or
+        (Test-Path -LiteralPath (Join-Path $installRoot 'update.previous.ps1'))) {
+        throw 'Running update.ps1 was not replaced cleanly.'
+    }
+    [IO.File]::WriteAllText($updateScript, '# custom launcher')
+    Publish-UpdateScript $installRoot 3>$null
+    if ([IO.File]::ReadAllText($updateScript) -cne '# custom launcher') {
+        throw 'Installer replaced an unrelated launcher.'
+    }
+    [IO.File]::WriteAllText($updateScript, '# legacy launcher using install.previous.ps1')
+    Publish-UpdateScript $installRoot
+    if ([IO.File]::ReadAllText($updateScript) -cne $generatedLauncher) {
+        throw 'Installer did not replace the legacy launcher.'
+    }
     $orderedPath = Put-PathEntryFirst 'C:\Previous\bin;C:\New\bin;C:\Other;C:\NEW\bin\' 'C:\New\bin'
     if ($orderedPath -cne 'C:\New\bin;C:\Previous\bin;C:\Other' -or
         (Put-PathEntryFirst $orderedPath 'C:\New\bin') -cne $orderedPath) {
@@ -166,30 +217,7 @@ try {
     if (-not $rejected -or [IO.File]::ReadAllText((Join-Path $liveBin 'ToolDock.Updater.exe')) -ne 'new') {
         throw 'Incomplete staging replaced live bin.'
     }
-    $scriptsSource = Join-Path $installRoot 'release-scripts'
-    New-Item -ItemType Directory -Path $scriptsSource | Out-Null
-    [IO.File]::WriteAllText((Join-Path $scriptsSource 'install.ps1'), '# updated installer')
-    [IO.File]::WriteAllText((Join-Path $scriptsSource 'update.ps1'), '# new launcher')
-    Publish-InstallerScripts $scriptsSource $installRoot
-    if ([IO.File]::ReadAllText((Join-Path $installRoot 'install.ps1')) -ne '# updated installer' -or
-        [IO.File]::ReadAllText($updateScript) -ne [IO.File]::ReadAllText($updateLauncher) -or
-        (Test-Path -LiteralPath (Join-Path $installRoot 'install.previous.ps1'))) {
-        throw 'Installer was not updated or the existing launcher was changed.'
-    }
-    [IO.File]::WriteAllText((Join-Path $scriptsSource 'install.ps1'), '# next installer')
-    Publish-InstallerScripts $scriptsSource $installRoot
-    if ([IO.File]::ReadAllText((Join-Path $installRoot 'install.ps1')) -ne '# next installer' -or
-        (Test-Path -LiteralPath (Join-Path $installRoot 'install.previous.ps1'))) {
-        throw 'Existing installer was not refreshed cleanly.'
-    }
-    $freshScriptsRoot = Join-Path $installRoot 'fresh-scripts'
-    New-Item -ItemType Directory -Path $freshScriptsRoot | Out-Null
-    Publish-InstallerScripts $scriptsSource $freshScriptsRoot
-    if (-not (Test-Path -LiteralPath (Join-Path $freshScriptsRoot 'install.ps1') -PathType Leaf) -or
-        -not (Test-Path -LiteralPath (Join-Path $freshScriptsRoot 'update.ps1') -PathType Leaf)) {
-        throw 'First installation did not publish both scripts.'
-    }
-    "PowerShell $($PSVersionTable.PSVersion) installer help, staging, recovery, and update launcher: OK"
+    "PowerShell $($PSVersionTable.PSVersion) installer help, staging, recovery, and generated update launcher: OK"
 }
 finally {
     if (Test-Path -LiteralPath $installRoot) {
