@@ -218,12 +218,16 @@ Variable references resolve the catalog's top-level `variables` object first, th
 │   └── secrets.dat
 ├── temp\
 ├── variables.json
-└── config.json
+├── config.json
+├── install.ps1
+└── update.ps1
 ```
 
 Installed state records the package version directory, not a single executable. That permits one release package to provide multiple commands and daemons. State also records generated command names so obsolete shims can be removed safely.
 
 The default root is `~/.tooldock`. With no `TOOLDOCK_HOME` override, an executable in `<root>\bin` discovers `<root>\config.json`. Every root uses a stable path hash in the pipe and singleton/update mutex names, so separate installations cannot collide.
+
+The release archive includes `install.ps1` and a small `update.ps1` launcher. The installer publishes them at the root after verifying the archive. `update.ps1` runs a temporary copy of `install.ps1`, letting the installer refresh itself. `config.json` retains the release repository and update interval so a parameterless `update.ps1` updates the same installation.
 
 Retention keeps the newest three marked version directories, the installed-state root, the `current` target, and any older version in use. Commands, notification handlers, and daemons hold shared version leases outside the version directory. Cleanup takes an exclusive lease before renaming an unused version to a private cleanup directory. It also checks matching running executable paths to protect a command whose client died. Inaccessible matching processes defer cleanup. Recursive deletion rejects reparse points and leaves the ownership marker until payload removal completes. Cleanup errors are warnings and are retried after later successful checks; unmarked legacy directories are preserved.
 

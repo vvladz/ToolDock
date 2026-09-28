@@ -5,26 +5,35 @@ Installs or updates ToolDock for the current Windows user.
 Downloads a ToolDock release, verifies its SHA-256 checksum, stages the complete
 bin directory, then replaces the installed programs. Registers the Starter and
 Updater scheduled tasks, adds bin to the user PATH, and runs the first update.
+The installed update.ps1 runs a temporary copy of this installer, which reads
+saved settings from config.json when parameters are omitted.
 Requires Windows x64 and the .NET 10 Runtime. Supports Windows PowerShell 5.1
 and PowerShell 7 (pwsh). Administrator privileges are not required.
 .PARAMETER Repository
 Public GitHub repository containing ToolDock releases, in owner/repository form.
+Required for the first installation; later read from config.json if omitted.
 .PARAMETER CatalogUrl
-Absolute HTTPS URL of the managed-package catalog (tools.json).
+Absolute HTTPS URL of the managed-package catalog (tools.json). Required for the
+first installation; later read from config.json if omitted.
 .PARAMETER Version
 Exact ToolDock release tag. Omit to select the latest release. This does not pin
 the versions of managed packages.
 .PARAMETER UpdateIntervalMinutes
-Package update interval in minutes, from 1 to 1440. Defaults to 5.
+Package update interval in minutes, from 1 to 1440. Defaults to the saved value
+when updating, or 5 for the first installation.
 .PARAMETER InstallRoot
 Installation directory. Defaults to ~/.tooldock. Reuse the same
-directory when updating; this parameter does not migrate an existing installation.
+directory when updating; update.ps1 defaults to its own directory. This parameter
+does not migrate an existing installation.
 .EXAMPLE
 .\install.ps1 -Repository 'vvladz/ToolDock' -CatalogUrl 'https://example.org/tools.json'
 Installs the latest ToolDock release using your hosted catalog URL.
 .EXAMPLE
 .\install.ps1 -Repository 'vvladz/ToolDock' -CatalogUrl 'https://example.org/tools.json' -InstallRoot 'D:\My Tools\ToolDock' -UpdateIntervalMinutes 15
 Uses a custom directory and checks managed packages every 15 minutes.
+.EXAMPLE
+& "$HOME\.tooldock\update.ps1"
+Updates ToolDock using the saved installation settings.
 .NOTES
 Run Get-Help .\install.ps1 -Full for all parameters and examples.
 Rerun with the same parameters after an interrupted installation to finish it.
@@ -33,11 +42,8 @@ are not supported. Open a new terminal after installation to refresh PATH.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
-    [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')]
     [string] $Repository,
 
-    [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string] $CatalogUrl,
 
@@ -110,6 +116,90 @@ function Switch-ToolDockBin([string] $Root) {
     Move-Item -LiteralPath $next -Destination $live
 }
 
+function Publish-InstallerFile([string] $Source, [string] $Destination, [string] $Root) {
+    $staged = Join-Path $Root ('.install-script-' + [Guid]::NewGuid().ToString('N') + '.ps1')
+    $backup = Join-Path $Root 'install.previous.ps1'
+    try {
+        Copy-Item -LiteralPath $Source -Destination $staged
+        if (Test-Path -LiteralPath $Destination -PathType Leaf) {
+            if (Test-Path -LiteralPath $backup) {
+                if (-not (Test-Path -LiteralPath $backup -PathType Leaf)) {
+                    throw "Installer backup is not a file: $backup"
+                }
+                Remove-Item -LiteralPath $backup -Force
+            }
+            Move-Item -LiteralPath $Destination -Destination $backup
+            try { Move-Item -LiteralPath $staged -Destination $Destination }
+            catch {
+                Move-Item -LiteralPath $backup -Destination $Destination
+                throw
+            }
+        } elseif (Test-Path -LiteralPath $Destination) {
+            throw "Cannot replace installer script because it is not a file: $Destination"
+        } else {
+            Move-Item -LiteralPath $staged -Destination $Destination
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged -Force }
+    }
+    if (Test-Path -LiteralPath $backup -PathType Leaf) {
+        try { Remove-Item -LiteralPath $backup -Force }
+        catch { Write-Warning "Old installer cleanup deferred: $($_.Exception.Message)" }
+    }
+}
+
+function Publish-InstallerScripts([string] $PackageRoot, [string] $Root) {
+    $installerSource = Join-Path $PackageRoot 'install.ps1'
+    $updateSource = Join-Path $PackageRoot 'update.ps1'
+    if (-not (Test-Path -LiteralPath $installerSource -PathType Leaf) -and
+        -not (Test-Path -LiteralPath $updateSource -PathType Leaf)) { return }
+    if (-not (Test-Path -LiteralPath $installerSource -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $updateSource -PathType Leaf)) {
+        throw 'Release package must contain both install.ps1 and update.ps1.'
+    }
+    $installerDestination = Join-Path $Root 'install.ps1'
+    if ($PSCommandPath -and [string]::Equals($PSCommandPath, $installerDestination, [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Warning 'The running install.ps1 cannot replace itself; run update.ps1 next time to refresh it.'
+    } else {
+        Publish-InstallerFile $installerSource $installerDestination $Root
+    }
+    $updateDestination = Join-Path $Root 'update.ps1'
+    if (-not (Test-Path -LiteralPath $updateDestination)) {
+        Publish-InstallerFile $updateSource $updateDestination $Root
+    } elseif (-not (Test-Path -LiteralPath $updateDestination -PathType Leaf)) {
+        throw "Cannot install update.ps1 because it is not a file: $updateDestination"
+    } elseif ((Get-FileHash -LiteralPath $updateDestination -Algorithm SHA256).Hash -ne
+              (Get-FileHash -LiteralPath $updateSource -Algorithm SHA256).Hash) {
+        Write-Warning 'Existing update.ps1 differs from the release launcher and was preserved.'
+    }
+}
+$installPath = [IO.Path]::GetFullPath($InstallRoot)
+$configPath = Join-Path $installPath 'config.json'
+$settings = if (Test-Path -LiteralPath $configPath) {
+    Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+} else { [pscustomobject]@{} }
+if ($null -eq $settings -or $settings -isnot [pscustomobject]) {
+    throw "Configuration must be a JSON object: $configPath"
+}
+if (-not $PSBoundParameters.ContainsKey('Repository') -and $settings.PSObject.Properties['repository']) {
+    $Repository = $settings.repository
+}
+if (-not $PSBoundParameters.ContainsKey('CatalogUrl') -and $settings.PSObject.Properties['catalogUrl']) {
+    $CatalogUrl = $settings.catalogUrl
+}
+if (-not $PSBoundParameters.ContainsKey('UpdateIntervalMinutes') -and $settings.PSObject.Properties['updateIntervalMinutes']) {
+    $UpdateIntervalMinutes = $settings.updateIntervalMinutes
+}
+if ([string]::IsNullOrWhiteSpace($Repository) -or
+    $Repository -cnotmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -or
+    $Repository.Contains('..')) {
+    throw 'Repository must be a public GitHub owner/repository name.'
+}
+if ($UpdateIntervalMinutes -lt 1 -or $UpdateIntervalMinutes -gt 1440) {
+    throw 'UpdateIntervalMinutes must be between 1 and 1440.'
+}
+
 if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
     throw 'ToolDock can only be installed on Windows.'
 }
@@ -130,7 +220,6 @@ if (-not [Uri]::TryCreate($CatalogUrl, [UriKind]::Absolute, [ref] $catalogUri) -
     throw 'CatalogUrl must be an absolute HTTPS URL.'
 }
 
-$installPath = [IO.Path]::GetFullPath($InstallRoot)
 $binPath = Join-Path $installPath 'bin'
 $assetName = 'ToolDock-win-x64.zip'
 $checksumAssetName = "$assetName.sha256"
@@ -189,6 +278,12 @@ try {
         -not (Test-Path -LiteralPath $clientShim -PathType Leaf)) {
         throw 'Release package is missing a ToolDock executable or tdctl.cmd.'
     }
+    $installerScriptSource = Join-Path $packagePath 'install.ps1'
+    $updateScriptSource = Join-Path $packagePath 'update.ps1'
+    if ((Test-Path -LiteralPath $installerScriptSource -PathType Leaf) -ne
+        (Test-Path -LiteralPath $updateScriptSource -PathType Leaf)) {
+        throw 'Release package must contain both install.ps1 and update.ps1.'
+    }
 
     # Finish every release copy before stopping the installed programs.
     Stage-ToolDockBin $packageBin $installPath
@@ -217,11 +312,9 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $installPath 'state') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $installPath 'logs') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $installPath 'temp') -Force | Out-Null
-    $configPath = Join-Path $installPath 'config.json'
-    $settings = if (Test-Path -LiteralPath $configPath) {
-        Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-    } else { [pscustomobject]@{} }
     $settings | Add-Member -NotePropertyName catalogUrl -NotePropertyValue $CatalogUrl -Force
+    $settings | Add-Member -NotePropertyName repository -NotePropertyValue $Repository -Force
+    $settings | Add-Member -NotePropertyName updateIntervalMinutes -NotePropertyValue $UpdateIntervalMinutes -Force
     $config = $settings | ConvertTo-Json -Depth 10
     $utf8NoBom = New-Object Text.UTF8Encoding($false)
     [IO.File]::WriteAllText((Join-Path $installPath 'config.json'), $config + [Environment]::NewLine, $utf8NoBom)
@@ -278,6 +371,7 @@ try {
         Write-Warning "Initial update returned exit code $($firstUpdate.ExitCode). See $installPath\logs\ToolDock.Updater.log."
     }
 
+    Publish-InstallerScripts $packagePath $installPath
     Write-Host "ToolDock $($release.tag_name) installed in $installPath."
     Write-Host 'Open a new terminal to use managed tool commands from PATH.'
     try { Remove-InstallDirectory (Join-Path $installPath 'bin.previous') $installPath }

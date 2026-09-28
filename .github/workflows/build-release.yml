@@ -82,6 +82,7 @@ jobs:
           Copy-Item artifacts/starter/* artifacts/package/bin -Exclude *.pdb -Force
           Copy-Item artifacts/updater/* artifacts/package/bin -Exclude *.pdb -Force
           Copy-Item artifacts/client/* artifacts/package/bin -Exclude *.pdb -Force
+          Copy-Item install.ps1, update.ps1 artifacts/package -Force
           Compress-Archive -Path artifacts/package/* -DestinationPath artifacts/ToolDock-win-x64.zip
           $archiveSize = (Get-Item artifacts/ToolDock-win-x64.zip).Length
           if ($archiveSize -gt 5MB) { throw "Framework-dependent release is unexpectedly large: $archiveSize bytes" }

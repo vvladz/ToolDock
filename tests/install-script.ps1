@@ -9,11 +9,18 @@ $ErrorActionPreference = 'Stop'
 
 $sentinel = 'STOP_AFTER_RELEASE_ASSET_SELECTION'
 $installer = (Resolve-Path -LiteralPath $InstallerPath).Path
+$updateLauncher = Join-Path (Split-Path -Parent $installer) 'update.ps1'
 $installRoot = Join-Path ([IO.Path]::GetTempPath()) ("ToolDock-installer-test-" + [Guid]::NewGuid().ToString('N'))
 $expectedDefaultRoot = [IO.Path]::GetFullPath((Join-Path $HOME '.tooldock'))
 $verifyDefaultRoot = $false
+$verifySavedSettings = $false
+$expectedReleaseUri = 'https://api.github.com/repos/example/ToolDock/releases/latest'
 
 function Invoke-RestMethod {
+    param([string] $Uri)
+    if ($verifySavedSettings -and $Uri -cne $expectedReleaseUri) {
+        throw "Saved repository was not used: $Uri"
+    }
     return [pscustomobject]@{
         tag_name = 'v-test'
         assets = @(
@@ -32,6 +39,11 @@ function Invoke-RestMethod {
 function Invoke-WebRequest {
     if ($verifyDefaultRoot -and -not [string]::Equals($installPath, $expectedDefaultRoot, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Installer chose $installPath instead of $expectedDefaultRoot."
+    }
+    if ($verifySavedSettings -and
+        (-not [string]::Equals($installPath, $installRoot, [StringComparison]::OrdinalIgnoreCase) -or
+         $CatalogUrl -cne 'https://example.org/saved.json' -or $UpdateIntervalMinutes -ne 17)) {
+        throw 'Installed update.ps1 did not use its root and saved settings.'
     }
     throw $sentinel
 }
@@ -66,6 +78,34 @@ try {
     }
     $verifyDefaultRoot = $false
 
+    New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $installRoot 'config.json'),
+        '{"catalogUrl":"https://example.org/saved.json","repository":"example/ToolDock","updateIntervalMinutes":17}')
+    $updateScript = Join-Path $installRoot 'update.ps1'
+    Copy-Item -LiteralPath $installer -Destination (Join-Path $installRoot 'install.ps1')
+    Copy-Item -LiteralPath $updateLauncher -Destination $updateScript
+    $verifySavedSettings = $true
+    try {
+        & $updateScript
+        throw 'Installed update.ps1 unexpectedly continued past the download boundary.'
+    }
+    catch {
+        if ($_.Exception.Message -ne $sentinel) { throw }
+    }
+    $verifySavedSettings = $false
+    Move-Item -LiteralPath (Join-Path $installRoot 'install.ps1') -Destination (Join-Path $installRoot 'install.previous.ps1')
+    $expectedReleaseUri = 'https://api.github.com/repos/example/ToolDock/releases/tags/v-selected'
+    $verifySavedSettings = $true
+    try {
+        & $updateScript -Version v-selected
+        throw 'Launcher unexpectedly continued past the download boundary during recovery.'
+    }
+    catch {
+        if ($_.Exception.Message -ne $sentinel) { throw }
+    }
+    $verifySavedSettings = $false
+    $expectedReleaseUri = 'https://api.github.com/repos/example/ToolDock/releases/latest'
+
     # Exercise the actual staging/switch functions without changing scheduled tasks or user PATH.
     $parseErrors = $null
     $tokens = $null
@@ -74,7 +114,7 @@ try {
     $definitions = $ast.FindAll({
         param($node)
         $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-            $node.Name -in @('Remove-InstallDirectory', 'Put-PathEntryFirst', 'Stage-ToolDockBin', 'Switch-ToolDockBin')
+            $node.Name -in @('Remove-InstallDirectory', 'Put-PathEntryFirst', 'Stage-ToolDockBin', 'Switch-ToolDockBin', 'Publish-InstallerFile', 'Publish-InstallerScripts')
     }, $false)
     foreach ($definition in $definitions) { . ([scriptblock]::Create($definition.Extent.Text)) }
     $orderedPath = Put-PathEntryFirst 'C:\Previous\bin;C:\New\bin;C:\Other;C:\NEW\bin\' 'C:\New\bin'
@@ -126,7 +166,30 @@ try {
     if (-not $rejected -or [IO.File]::ReadAllText((Join-Path $liveBin 'ToolDock.Updater.exe')) -ne 'new') {
         throw 'Incomplete staging replaced live bin.'
     }
-    "PowerShell $($PSVersionTable.PSVersion) installer help, staging, and recovery: OK"
+    $scriptsSource = Join-Path $installRoot 'release-scripts'
+    New-Item -ItemType Directory -Path $scriptsSource | Out-Null
+    [IO.File]::WriteAllText((Join-Path $scriptsSource 'install.ps1'), '# updated installer')
+    [IO.File]::WriteAllText((Join-Path $scriptsSource 'update.ps1'), '# new launcher')
+    Publish-InstallerScripts $scriptsSource $installRoot
+    if ([IO.File]::ReadAllText((Join-Path $installRoot 'install.ps1')) -ne '# updated installer' -or
+        [IO.File]::ReadAllText($updateScript) -ne [IO.File]::ReadAllText($updateLauncher) -or
+        (Test-Path -LiteralPath (Join-Path $installRoot 'install.previous.ps1'))) {
+        throw 'Installer was not updated or the existing launcher was changed.'
+    }
+    [IO.File]::WriteAllText((Join-Path $scriptsSource 'install.ps1'), '# next installer')
+    Publish-InstallerScripts $scriptsSource $installRoot
+    if ([IO.File]::ReadAllText((Join-Path $installRoot 'install.ps1')) -ne '# next installer' -or
+        (Test-Path -LiteralPath (Join-Path $installRoot 'install.previous.ps1'))) {
+        throw 'Existing installer was not refreshed cleanly.'
+    }
+    $freshScriptsRoot = Join-Path $installRoot 'fresh-scripts'
+    New-Item -ItemType Directory -Path $freshScriptsRoot | Out-Null
+    Publish-InstallerScripts $scriptsSource $freshScriptsRoot
+    if (-not (Test-Path -LiteralPath (Join-Path $freshScriptsRoot 'install.ps1') -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $freshScriptsRoot 'update.ps1') -PathType Leaf)) {
+        throw 'First installation did not publish both scripts.'
+    }
+    "PowerShell $($PSVersionTable.PSVersion) installer help, staging, recovery, and update launcher: OK"
 }
 finally {
     if (Test-Path -LiteralPath $installRoot) {

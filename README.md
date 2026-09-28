@@ -38,11 +38,11 @@ The script can also be launched explicitly with `pwsh -NoProfile -File .\install
 
 | Parameter | Required / default | Meaning |
 |---|---|---|
-| `-Repository` | Required | Public ToolDock release repository, in `owner/repository` form |
-| `-CatalogUrl` | Required | Absolute HTTPS URL of your JSON package catalog |
+| `-Repository` | Required on first install | Public ToolDock release repository, in `owner/repository` form; saved for updates |
+| `-CatalogUrl` | Required on first install | Absolute HTTPS URL of your JSON package catalog; saved for updates |
 | `-Version` | Latest release | Exact ToolDock release tag; does not pin managed packages |
-| `-InstallRoot` | `~/.tooldock` | Installation directory; reuse it when rerunning the installer |
-| `-UpdateIntervalMinutes` | `5` | Package check interval, from 1 to 1,440 minutes |
+| `-InstallRoot` | `~/.tooldock` | Installation directory; installed `update.ps1` uses its own directory |
+| `-UpdateIntervalMinutes` | Saved value, or `5` on first install | Package check interval, from 1 to 1,440 minutes |
 
 The installer:
 
@@ -50,9 +50,17 @@ The installer:
 - puts `~/.tooldock/bin` first in the user `PATH`;
 - creates the `ToolDock Starter` and `ToolDock Updater` scheduled tasks;
 - starts the supervisor and performs the first update;
-- verifies the release archive against its published SHA-256 file.
+- verifies the release archive against its published SHA-256 file;
+- places `install.ps1` and a small `update.ps1` launcher in `<InstallRoot>` for future ToolDock updates.
 
-Run the installer again to update ToolDock itself. Use `-Version v1.2.3` to select a specific release.
+Run the installed launcher to update ToolDock itself. It runs the installer with the repository, catalog URL, and interval saved in `config.json` and targets its own installation directory:
+
+```powershell
+& "$HOME\.tooldock\update.ps1"
+& "$HOME\.tooldock\update.ps1" -Version v1.2.3 # Select a specific release
+```
+
+For a custom root, run its `update.ps1` instead. You can also rerun `install.ps1` with the same root to recover an interrupted installation.
 
 For a custom directory and a 15-minute interval:
 
@@ -64,7 +72,7 @@ For a custom directory and a 15-minute interval:
 
 The executables discover `config.json` beside their `bin` directory, including in a new terminal or sign-in session. `TOOLDOCK_HOME` takes precedence over this discovery. Separate roots have separate runtime pipes and mutexes, but the installer registers a single pair of scheduled tasks for the user. Installing to another root replaces those task registrations; it does not migrate existing packages, variables, or secrets. Use the same root for upgrades.
 
-Self-installation prepares a complete `bin.next`, preserves command shims, stops ToolDock, and switches directories through `bin.previous`. If interrupted, rerun the installer to finish the installation. Existing notification settings are preserved.
+Self-installation prepares a complete `bin.next`, preserves command shims, stops ToolDock, and switches directories through `bin.previous`. If interrupted, rerun the installer to finish the installation. If installer-script refresh was interrupted, `update.ps1` can run the retained `install.previous.ps1`. Existing notification settings are preserved.
 
 ### First use
 
@@ -97,10 +105,12 @@ The installer writes `<InstallRoot>\config.json`; [config.example.json](docs/con
 | Setting | Default | Meaning |
 |---|---|---|
 | `catalogUrl` | Required | HTTPS package catalog URL |
+| `repository` | Written by installer | ToolDock release repository used by `update.ps1` |
+| `updateIntervalMinutes` | Written by installer | Scheduled package check interval reused by `update.ps1` |
 | `notificationCommand` | Omitted | Installed catalog command that receives events |
 | `notificationTimeoutSeconds` | `10` | Handler timeout, from 1 to 60 seconds |
 
-Edit this file to change the catalog or notification settings. They are read on each update or notification delivery. Change the schedule by rerunning the installer with `-UpdateIntervalMinutes`.
+Edit this file to change the catalog or notification settings. They are read on each update or notification delivery. To change the schedule, rerun the installer with `-UpdateIntervalMinutes` or edit `updateIntervalMinutes` and run `update.ps1`.
 
 ## Package catalog
 
