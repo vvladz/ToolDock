@@ -147,12 +147,13 @@ Package names identify installations. Command names identify terminal entry poin
 }
 ```
 
-One package may contain CLI commands, background daemons, or both. At least one command or daemon is required; an unused `commands` or `daemons` section may be omitted. The same executable may serve both roles; daemon arguments can select its background mode:
+One package may contain CLI commands, background daemons, or both. At least one command or daemon is required; an unused `commands` or `daemons` section may be omitted. The same executable may serve both roles; fixed arguments can select each mode:
 
 ```json
 "commands": {
   "example": {
-    "executable": "example.exe"
+    "executable": "example.exe",
+    "arguments": ["client"]
   }
 },
 "daemons": {
@@ -176,7 +177,7 @@ Fields:
 | `commands` | Optional globally unique command names mapped to command definitions |
 | `daemons` | Optional globally unique supervised-daemon names and their launch settings |
 | `executable` | Relative executable path inside the ZIP |
-| `arguments` | Optional daemon arguments; defaults to an empty list |
+| `arguments` | Optional fixed command arguments (before invocation arguments) or daemon arguments; defaults to an empty list |
 | `autostart` | Start the daemon after sign-in or its first installation; defaults to `false` |
 | `restartOnUpdate` | Restart the daemon after its package changes, if it is currently running; defaults to `false` |
 | `environment` | Optional process environment made from literals, variables, and secret references |

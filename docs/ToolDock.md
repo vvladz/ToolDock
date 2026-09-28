@@ -150,6 +150,7 @@ The optional top-level `variables` object contains public catalog-wide variable 
       "commands": {
         "command-name": {
           "executable": "relative/path/command.exe",
+          "arguments": ["client"],
           "environment": {
             "MODE": "interactive",
             "SERVER": { "variable": "service.server" },
@@ -175,6 +176,8 @@ The optional top-level `variables` object contains public catalog-wide variable 
 ```
 
 Each package must define at least one command or daemon. Either section may be omitted when unused. Package names, command names, and daemon names are case-insensitively unique within their respective namespaces. Command and daemon executable paths must remain under the extracted package directory. Environment names use the conventional Windows identifier form and are case-insensitively unique within one process definition.
+
+Command `arguments` are optional and precede arguments passed through `tdctl exec` or a generated shim. Both command and daemon arguments default to an empty list; each array entry is passed as one argument, including empty strings.
 
 An environment value is exactly one of:
 

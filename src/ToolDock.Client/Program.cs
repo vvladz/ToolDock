@@ -331,6 +331,10 @@ internal static class Program
             UseShellExecute = false,
             WorkingDirectory = Environment.CurrentDirectory
         };
+        foreach (var argument in command.Arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);

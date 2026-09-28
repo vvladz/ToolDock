@@ -73,6 +73,7 @@ public static partial class Validation
                 }
 
                 _ = ValidateExecutablePath($"command {commandName}", command.Executable);
+                ValidateArguments($"Command {commandName}", command.Arguments);
                 ValidateEnvironment($"command {commandName}", command.Environment);
             }
 
@@ -85,10 +86,7 @@ public static partial class Validation
                 }
 
                 _ = ValidateExecutablePath($"daemon {daemonName}", daemon.Executable);
-                if (daemon.Arguments.Any(argument => argument is null || argument.Contains('\0')))
-                {
-                    throw new InvalidDataException($"Daemon {daemonName} has an invalid argument.");
-                }
+                ValidateArguments($"Daemon {daemonName}", daemon.Arguments);
                 ValidateEnvironment($"daemon {daemonName}", daemon.Environment);
             }
         }
@@ -213,6 +211,14 @@ public static partial class Validation
     public static InstalledTool FindInstalled(InstalledState state, string name)
         => state.Tools.FirstOrDefault(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)).Value
            ?? throw new KeyNotFoundException($"Package is not installed: {name}");
+
+    private static void ValidateArguments(string owner, string[] arguments)
+    {
+        if (arguments is null || arguments.Any(argument => argument is null || argument.Contains('\0')))
+        {
+            throw new InvalidDataException($"{owner} has an invalid argument.");
+        }
+    }
 
     private static void ValidateEnvironment(string owner, Dictionary<string, EnvironmentValue> environment)
     {

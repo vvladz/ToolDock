@@ -67,6 +67,14 @@ internal static partial class Suite
         using var f = new Fixture();
         foreach (var name in new[] { "tdctl", "TDCTL", "ToolDock.Client" })
             Reject(() => Validation.ValidateCatalog(new ToolCatalog { Tools = new() { ["app"] = Fixture.Definition(command: name) } }));
+        foreach (var arguments in new string[][] { null!, [null!], ["bad\0value"] })
+            Reject(() => Validation.ValidateCatalog(new ToolCatalog { Tools = new()
+            {
+                ["app"] = new ToolDefinition { Repo = "example/app", Asset = "app.zip", Commands = new()
+                {
+                    ["app"] = new CommandDefinition { Executable = "app.exe", Arguments = arguments }
+                } }
+            } }));
         foreach (var path in new[] { "../bad.exe", "..\\bad.exe", "C:\\bad.exe", "\\bad.exe", "a/../../bad.exe" })
             Reject(() => Validation.ResolveExecutable(f.Paths.Tools, "test", path));
         Require(Validation.ResolveExecutable(f.Paths.Tools, "test", "nested/app.exe") == Path.Combine(f.Paths.Tools, "nested", "app.exe"), "Nested path rejected.");

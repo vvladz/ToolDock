@@ -83,7 +83,12 @@ internal static partial class Suite
                         ["NOTIFY_MODE"] = EnvironmentValue.FromLiteral(mode)
                     }
                 },
-                ["runtime"] = new CommandDefinition { Executable = Path.GetFileName(Executable) }
+                ["runtime"] = new CommandDefinition { Executable = Path.GetFileName(Executable) },
+                ["fixed"] = new CommandDefinition
+                {
+                    Executable = Path.GetFileName(Executable),
+                    Arguments = ["--echo-arguments", "fixed with space", "", "quote\"here"]
+                }
             },
             Daemons = new()
             {
@@ -246,6 +251,23 @@ internal static partial class Suite
             await help.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
             Require(help.ExitCode == 0 && JsonSerializer.Deserialize<string[]>(output)!.SequenceEqual(new[] { "--help", "two words" }),
                 "Client help handling intercepted or changed child arguments.");
+        }
+        using (var fixedCommand = Fixture.Start(client, ["exec", "fixed", "--", "invoked with space", "", "--help"]))
+        {
+            var output = await fixedCommand.StandardOutput.ReadToEndAsync();
+            await fixedCommand.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            Require(fixedCommand.ExitCode == 0 && JsonSerializer.Deserialize<string[]>(output)!.SequenceEqual(
+                new[] { "fixed with space", "", "quote\"here", "invoked with space", "", "--help" }),
+                "Configured command arguments were not prepended or lost their boundaries.");
+        }
+        await CommandShims.WriteAsync(f.Paths, "fixed", default);
+        using (var shim = Fixture.Start("cmd.exe", ["/d", "/c", Path.Combine(f.Paths.Bin, "fixed.cmd"), "from shim"]))
+        {
+            var output = await shim.StandardOutput.ReadToEndAsync();
+            await shim.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            Require(shim.ExitCode == 0 && JsonSerializer.Deserialize<string[]>(output)!.SequenceEqual(
+                new[] { "fixed with space", "", "quote\"here", "from shim" }),
+                "Generated command shim did not apply fixed arguments.");
         }
         using (var process = Fixture.Start(client, ["variable", "set", "root.proof", "custom"]))
         {

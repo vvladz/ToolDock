@@ -31,6 +31,7 @@ public sealed class ToolDefinition
 public sealed class CommandDefinition
 {
     public required string Executable { get; init; }
+    public string[] Arguments { get; init; } = [];
     public Dictionary<string, EnvironmentValue> Environment { get; init; } = [];
 }
 
