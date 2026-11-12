@@ -108,6 +108,16 @@ if ($LASTEXITCODE -eq 0) {
 
 Automatic restarts keep using the executable path and settings selected at the beginning of the runner's lifetime. Switching a link to a different installed copy does not change that selection. Keep the selected program files available while its runner is active.
 
+## List daemons
+
+List the configured daemon names:
+
+```powershell
+ToolDock.exe list
+```
+
+The command prints one name per line, sorted without regard to case. It lists JSON files directly in `$HOME/.config/ToolDock/tools/`, regardless of whether their daemons are running. It does not read or validate the JSON contents. If the directory is missing or empty, the command succeeds with no output.
+
 ## Check status
 
 `status` describes the ToolDock runner. A runner waiting to restart its program is still `running`.
@@ -165,6 +175,7 @@ ToolDock.exe start <daemon>
 ToolDock.exe run <daemon>
 ToolDock.exe stop <daemon>
 ToolDock.exe status <daemon> [--json]
+ToolDock.exe list
 ToolDock.exe --help
 ToolDock.exe --version
 ```

@@ -14,6 +14,7 @@ internal static class Program
         ToolDock.exe run <daemon>
         ToolDock.exe stop <daemon>
         ToolDock.exe status <daemon> [--json]
+        ToolDock.exe list
         ToolDock.exe --help
         ToolDock.exe --version
         """;
@@ -31,6 +32,11 @@ internal static class Program
         {
             if (args is ["--help"]) { Console.WriteLine(Help); return 0; }
             if (args is ["--version"]) { Console.WriteLine(Assembly.GetExecutingAssembly().GetName().Version); return 0; }
+            if (args is ["list"])
+            {
+                foreach (var name in Paths.ListDaemons(root)) Console.WriteLine(name);
+                return 0;
+            }
             if (args is ["run", var daemon, "--background", var token, "--root", var backgroundRoot] && Guid.TryParseExact(token, "N", out var runId))
                 return await BackgroundAsync(new Paths(daemon, backgroundRoot), runId, cancellation);
             if (args.Length is < 2 or > 3 || args[0] is not ("start" or "run" or "stop" or "status") ||

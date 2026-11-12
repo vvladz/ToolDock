@@ -36,8 +36,25 @@ internal sealed class Paths
             (stem.Length == 4 && (stem.StartsWith("COM") || stem.StartsWith("LPT")) && "123456789¹²³".Contains(stem[3])))
             throw new ArgumentException("Reserved Windows device name.");
         Name = name.ToLowerInvariant();
-        Root = Path.GetFullPath(root ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "ToolDock"));
+        Root = ResolveRoot(root);
     }
+    private static string ResolveRoot(string? root) =>
+        Path.GetFullPath(root ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "ToolDock"));
+
+    internal static string[] ListDaemons(string? root = null)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(Path.Combine(ResolveRoot(root), "tools"), "*", SearchOption.TopDirectoryOnly)
+                .Where(file => string.Equals(Path.GetExtension(file), ".json", StringComparison.OrdinalIgnoreCase))
+                .Select(file => Path.GetFileNameWithoutExtension(file))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (DirectoryNotFoundException) { return []; }
+    }
+
     internal string EventName(Guid runId)
     {
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Root.ToUpperInvariant() + "\0" + Name.ToUpperInvariant())));

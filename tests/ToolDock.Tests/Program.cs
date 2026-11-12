@@ -16,6 +16,37 @@ var detachedSupported = true;
 try
 {
     await Test("CLI rejects invalid commands", async () => Check(await Cli.ExecuteAsync(["unknown", "x"], root) == 2));
+    await Test("list succeeds with no output for missing or empty configuration directories", async () =>
+    {
+        var missingRoot = Path.Combine(root, "missing-list-root");
+        Check(await List(missingRoot) == (0, ""));
+        Check(!Directory.Exists(missingRoot), "list must not create directories.");
+        Check(await List(root) == (0, ""));
+    });
+    await Test("list returns sorted configuration names without reading JSON or runtime state", async () =>
+    {
+        var listRoot = Path.Combine(root, "list-root");
+        var tools = Path.Combine(listRoot, "tools");
+        Directory.CreateDirectory(Path.Combine(tools, "nested"));
+        Directory.CreateDirectory(Path.Combine(tools, "directory.json"));
+        File.WriteAllText(Path.Combine(tools, "zeta.json"), "invalid JSON");
+        File.WriteAllText(Path.Combine(tools, "Alpha.JSON"), "{}");
+        File.WriteAllText(Path.Combine(tools, "middle.name.json"), "null");
+        File.WriteAllText(Path.Combine(tools, "ignored.json.bak"), "{}");
+        File.WriteAllText(Path.Combine(tools, "nested", "hidden.json"), "{}");
+        Directory.CreateDirectory(Path.Combine(listRoot, "state"));
+        File.WriteAllText(Path.Combine(listRoot, "state", "stale.json"), "invalid state");
+        var (code, output) = await List(listRoot);
+        Check(code == 0);
+        Check(output.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+            .SequenceEqual(["Alpha", "middle.name", "zeta"]), output);
+        Check(!Directory.Exists(Path.Combine(listRoot, "logs")));
+    });
+    await Test("list rejects unexpected arguments", async () =>
+    {
+        Check(await Cli.ExecuteAsync(["list", "daemon"], root) == 2);
+        Check(await Cli.ExecuteAsync(["list", "--json"], root) == 2);
+    });
     await Test("argument quoting, environment, working directory and output origins", async () =>
     {
         var result = Path.Combine(root, "arguments.json");
@@ -240,6 +271,18 @@ Paths Config(string name, string[] arguments, string restart, double delay = 5, 
     return paths;
 }
 Task<int> Run(Paths paths) => Runner.RunAsync(paths, Guid.NewGuid(), false, _ => Task.CompletedTask, default);
+static async Task<(int Code, string Output)> List(string root)
+{
+    var original = Console.Out;
+    using var output = new StringWriter();
+    try
+    {
+        Console.SetOut(output);
+        var code = await Cli.ExecuteAsync(["list"], root);
+        return (code, output.ToString());
+    }
+    finally { Console.SetOut(original); }
+}
 Task<string> Start(Paths paths) => Cli.StartAsync(paths, launch: detachedSupported ? null :
     (executable, arguments) => Native.CreateProcess(executable, arguments));
 string Logs(Paths paths) => string.Join('\n', Directory.GetFiles(paths.LogDirectory, "*.log").Select(File.ReadAllText));

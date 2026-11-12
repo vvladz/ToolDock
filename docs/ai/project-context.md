@@ -37,6 +37,7 @@ Configuration edits do not change a running instance or trigger reload. A new ru
 | `run <daemon>` | Become the persistent runner in the invoking environment |
 | `stop <daemon>` | Signal the runner and wait for shutdown |
 | `status <daemon> [--json]` | Report runner activity and its last recorded result |
+| `list` | Print configured daemon names, one per line, sorted case-insensitively |
 | `--help` | Print CLI help |
 | `--version` | Print the executable version |
 
@@ -49,6 +50,8 @@ Repeated `start` reports `already running`; new successful startup reports `star
 Short commands write results to stdout and errors to stderr. CLI exit codes: `0` for success, `1` for operation/configuration/state errors or timeout, `2` for invalid syntax. A successfully read `status` returns `0` even for a reported `failed` state.
 
 The runner records `0` for successful child completion or successful manual stop. It records `1` for its own errors or a nonzero child exit for which no retry is scheduled. Exact child exit codes belong in the log. Process-creation errors are fatal; restart policies apply to exits of a successfully created child.
+
+`list` enumerates only JSON files directly in the configuration `tools` directory. File extensions and daemon identity are case-insensitive; output preserves the file name's spelling without its extension. It neither parses configurations nor reads runtime state. A missing or empty directory yields no output and exit code `0`; other enumeration errors follow the normal operation-error path. The command accepts no additional arguments and does not create directories.
 
 ## Background lifetime
 
@@ -159,6 +162,8 @@ Policy and retry delay are configurable per daemon. Keep remaining settings toge
 A command timeout is an error. A failed or cancelled new `start` must clean up only its own runner, leaving an existing runner from another invocation untouched. Resolve ownership, acknowledgement, and cancellation races during implementation within this contract.
 
 ## Acceptance checks
+
+- `list` returns sorted configured names, includes malformed JSON files, ignores nested files and runtime-only state, and succeeds without output when no configurations exist.
 
 - New `start` returns after the first daemon process starts; runner and group survive command exit and console closure in supported environments.
 - Different IDs run one EXE independently. Repeating an ID, including a case variant or an ID held by direct `run`, creates no duplicate daemon.
