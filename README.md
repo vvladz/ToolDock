@@ -46,7 +46,7 @@ For example, create `work-tunnel.json`:
 | `executable` | An `.exe` file name to find on ToolDock's `PATH` | Required |
 | `arguments` | An array of argument strings | `[]` |
 | `workingDirectory` | An existing working directory for the program | The configuration file's directory |
-| `environment` | Environment variables to add or override for the program | `{}`; other variables are inherited |
+| `environment` | Environment variables or secret references for this program | `{}`; Windows and global values are inherited |
 | `restart` | `never`, `on-failure`, or `always` | `on-failure` |
 | `restartDelaySeconds` | A positive delay between attempts, in seconds | `5` |
 
@@ -62,6 +62,62 @@ Write each argument as a separate JSON string, including arguments that contain 
 ```
 
 An `environment` override applies to the child program. It does not change the `PATH` ToolDock uses to select the executable.
+
+## Global environment
+
+Create `$HOME/.config/ToolDock/environment.json` to provide environment variables for all daemons:
+
+```json
+{
+  "DOTNET_ENVIRONMENT": "Production",
+  "LOG_LEVEL": "Information"
+}
+```
+
+Values are applied in this order, with later entries overriding earlier ones:
+
+1. The Windows environment inherited by ToolDock.
+2. `environment.json`.
+3. The daemon's `environment` section.
+
+Variable names are case-insensitive. A missing `environment.json` is allowed. Invalid JSON or invalid environment entries cause startup to fail. Overrides affect the child program, including its `PATH`; ToolDock still finds the executable using its own original `PATH`.
+
+## Secrets
+
+Save a secret with a hidden input prompt:
+
+```powershell
+ToolDock.exe secret set worker-token
+```
+
+Press Enter to save, Backspace to edit, or Escape to cancel. Repeating `set` replaces the existing value. Secret names are case-insensitive.
+
+Reference the saved name in a daemon's configuration:
+
+```json
+{
+  "executable": "worker.exe",
+  "environment": {
+    "LOG_LEVEL": "Debug",
+    "API_TOKEN": { "secret": "worker-token" }
+  }
+}
+```
+
+Both `environment.json` and the per-daemon `environment` section accept ordinary strings or objects containing only a `secret` name. ToolDock merges the environment first, then looks up the remaining references. A reference overridden by a later value does not require that secret. A missing or unreadable required secret prevents startup.
+
+Manage saved names with:
+
+```powershell
+ToolDock.exe secret list
+ToolDock.exe secret delete worker-token
+```
+
+`secret list` prints names only. Deleting an absent name succeeds. To provide a value from a script, use `ToolDock.exe secret set worker-token --stdin` and supply the value through standard input. This reads until EOF and removes one final LF or CRLF added by a pipeline, preserving other whitespace. Secret values are not accepted as command-line arguments.
+
+Secrets are stored in `$HOME/.config/ToolDock/secrets.dat`, encrypted with Windows DPAPI for the current user. Decryption normally requires the same Windows user profile and computer. Other processes running as that user can also decrypt the store. The child program receives referenced values as environment variables; any secret it prints will appear in its logs. ToolDock's own diagnostics do not print secret values.
+
+Global variables and secret values are loaded once per runner launch. Stop and start the daemon after changing them; automatic retries retain the original values. `list`, `stop`, and `status` work independently of the global environment and secret store.
 
 ## Start and stop
 
@@ -176,6 +232,9 @@ ToolDock.exe run <daemon>
 ToolDock.exe stop <daemon>
 ToolDock.exe status <daemon> [--json]
 ToolDock.exe list
+ToolDock.exe secret set <name> [--stdin]
+ToolDock.exe secret list
+ToolDock.exe secret delete <name>
 ToolDock.exe --help
 ToolDock.exe --version
 ```
@@ -215,6 +274,9 @@ ToolDock stores configuration, logs, and runtime state separately:
 
 ```text
 ~/.config/ToolDock/
+  environment.json
+  secrets.dat
+  secrets.lock
   tools/<daemon>.json
   logs/<daemon>/log-*.log
   state/<daemon>.lock

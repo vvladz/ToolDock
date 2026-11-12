@@ -15,6 +15,9 @@ internal static class Program
         ToolDock.exe stop <daemon>
         ToolDock.exe status <daemon> [--json]
         ToolDock.exe list
+        ToolDock.exe secret set <name> [--stdin]
+        ToolDock.exe secret list
+        ToolDock.exe secret delete <name>
         ToolDock.exe --help
         ToolDock.exe --version
         """;
@@ -32,6 +35,7 @@ internal static class Program
         {
             if (args is ["--help"]) { Console.WriteLine(Help); return 0; }
             if (args is ["--version"]) { Console.WriteLine(Assembly.GetExecutingAssembly().GetName().Version); return 0; }
+            if (args.FirstOrDefault() == "secret") return await SecretCommands.ExecuteAsync(args, root, cancellation);
             if (args is ["list"])
             {
                 foreach (var name in Paths.ListDaemons(root)) Console.WriteLine(name);

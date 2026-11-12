@@ -19,6 +19,9 @@ The configuration root is `~/.config/ToolDock`, where `~` is the current Windows
 | Path beneath the root | Purpose |
 | --- | --- |
 | `tools/*.json` | User-written configurations; no recursive discovery |
+| `environment.json` | Optional global environment variables and secret references |
+| `secrets.dat` | Current-user DPAPI-encrypted secret dictionary |
+| `secrets.lock` | Exclusive writer lock for secret changes |
 | `logs/<daemon>/log-*.log` | One daemon's rotating combined log |
 | `state/<daemon>.lock` | The runner's held OS file lock |
 | `state/<daemon>.json` | The last recorded runner launch and result |
@@ -38,6 +41,9 @@ Configuration edits do not change a running instance or trigger reload. A new ru
 | `stop <daemon>` | Signal the runner and wait for shutdown |
 | `status <daemon> [--json]` | Report runner activity and its last recorded result |
 | `list` | Print configured daemon names, one per line, sorted case-insensitively |
+| `secret set <name> [--stdin]` | Create or replace a secret using hidden input or standard input |
+| `secret list` | Print secret names only |
+| `secret delete <name>` | Delete a secret; absence is successful |
 | `--help` | Print CLI help |
 | `--version` | Print the executable version |
 
@@ -71,12 +77,28 @@ Arguments are an array of strings, passed without a shell or ToolDock substituti
 
 The working directory must exist. Resolve relative directories from the JSON file's directory. Environment overrides apply to the child; other variables are inherited. Executable selection uses the runner's original `PATH`, not a child environment override.
 
+Merge the inherited Windows environment, optional global `environment.json`, and the daemon's `environment` section in that order, comparing variable names case-insensitively. Values are strings or objects containing exactly one `secret` string property. Resolve references only after merging, so overridden references do not require their secrets. Reject invalid names, NUL values, malformed JSON, invalid reference shapes, or missing required secrets without including values in diagnostics. A missing global file is allowed; corrupt files are errors.
+
+`environment.json` and resolved secret values are part of the launch snapshot. Automatic retries keep them; a new runner reads them again. `list`, `stop`, and `status` never load these files.
+
+## Secret storage and input
+
+Store the complete secret dictionary encrypted in `secrets.dat` using Windows DPAPI with current-user scope and `CRYPTPROTECT_UI_FORBIDDEN`. Do not use machine-wide scope. Use the native Windows API already available to the Windows-only application; no additional package is required.
+
+Secret names are case-insensitive, nonblank, at most 256 characters, and contain no control characters. Empty secret values are allowed; NUL characters are rejected. The CLI never accepts values as command-line arguments. Interactive entry is hidden, supports Backspace, and can be cancelled with Escape or Ctrl+C. Redirected input requires `--stdin`; read through EOF and remove one final LF or CRLF, preserving other whitespace.
+
+Secret mutations hold an exclusive file handle on `secrets.lock` across the read/modify/write operation. A competing writer fails explicitly rather than overwriting another update. Write only encrypted bytes to a temporary file, then replace the target atomically. Readers allow file replacement and see a complete old or new snapshot. Do not replace an unreadable or corrupt store with an empty one. Clear temporary plaintext byte buffers after use; plaintext strings remain necessary for the child environment.
+
+Secret listing exposes only names. Missing referenced secrets prevent startup; a corrupt store is only accessed when effective references or secret commands require it. Own diagnostics must not include secret values or malformed JSON fragments. Preserve the existing child-output logging behavior: the daemon can print its own environment, and this is not automatically redacted. DPAPI protects stored data, not against other processes under the same user account.
+
+## Snapshot initialization
+
 On each runner launch:
 
 1. Acquire the lock, prepare stop signaling, and publish the PID and unfinished result; then validate configuration.
 2. Search the runner's `PATH` directories in order. Do not implicitly add the current or configuration directory.
 3. Resolve the final executable path, including links in directory components. `GetFinalPathNameByHandleW` is suitable for this.
-4. Capture the executable path, arguments, working directory, environment, and restart policy.
+4. Merge environment layers, resolve required secrets, and capture the executable path, arguments, working directory, environment, and restart policy.
 5. Create the Job and start the daemon. Acknowledge the first successful process launch to `start`.
 6. Read stdout and stderr while waiting for child exit or a stop request.
 7. If needed, clean up the old attempt, wait the configured delay, and retry from the same snapshot.
@@ -157,11 +179,16 @@ The daemon needs no interactive stdin. Breakaway does not close inherited stdout
 | Log rotation | Daily and at approximately 20 MiB |
 | Log retention | Up to 10 files per daemon |
 
-Policy and retry delay are configurable per daemon. Keep remaining settings together in code; no CLI timeout override or global settings file is required.
+Policy and retry delay are configurable per daemon. Keep operational timeouts and log settings together in code. The global `environment.json` file configures only the child environment.
 
 A command timeout is an error. A failed or cancelled new `start` must clean up only its own runner, leaving an existing runner from another invocation untouched. Resolve ownership, acknowledgement, and cancellation races during implementation within this contract.
 
 ## Acceptance checks
+
+- Global and per-daemon environment values override inherited values case-insensitively. The effective environment does not change executable lookup.
+- DPAPI storage round-trips synthetic secrets, stores no plaintext values, preserves other entries on updates/deletes, rejects competing writers and corrupt data, and never prints values in own diagnostics.
+- Missing effective secret references fail startup; overridden references do not access the secret store. Retries retain values across global-file and secret changes; a new runner receives updated values.
+- Control commands remain usable with corrupt global environment or secret files.
 
 - `list` returns sorted configured names, includes malformed JSON files, ignores nested files and runtime-only state, and succeeds without output when no configurations exist.
 
@@ -192,6 +219,9 @@ The current execution environment places even the interactive shell in an extern
 Detached lifetime and explicit breakaway remain unverified in this environment. The suite includes a breakaway/output-drain scenario for an environment permitting detachment and separately checks cancellation of output reads while a writer remains open. Cross-session control, actual console closure/Ctrl+C, and the user's SSH launch mechanism still require validation in their target environments.
 
 ## API references
+
+- [Windows DPAPI encryption](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata)
+- [Windows DPAPI decryption](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptunprotectdata)
 
 - [Process creation flags](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)
 - [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)

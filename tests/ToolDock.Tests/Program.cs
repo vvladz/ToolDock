@@ -47,6 +47,7 @@ try
         Check(await Cli.ExecuteAsync(["list", "daemon"], root) == 2);
         Check(await Cli.ExecuteAsync(["list", "--json"], root) == 2);
     });
+    await SecretTests.RunAsync(root, Test);
     await Test("argument quoting, environment, working directory and output origins", async () =>
     {
         var result = Path.Combine(root, "arguments.json");
@@ -266,7 +267,8 @@ Paths Config(string name, string[] arguments, string restart, double delay = 5, 
     File.WriteAllText(paths.ConfigurationFile, JsonSerializer.Serialize(new DaemonConfiguration
     {
         Executable = "ToolDock.Tests.exe", Arguments = ["fixture", .. arguments], WorkingDirectory = root,
-        Restart = restart, RestartDelaySeconds = delay, Environment = environment ?? []
+        Restart = restart, RestartDelaySeconds = delay,
+        Environment = (environment ?? []).ToDictionary(pair => pair.Key, pair => JsonSerializer.SerializeToElement(pair.Value))
     }, Settings.Json));
     return paths;
 }
@@ -298,6 +300,10 @@ static async Task<int> Fixture(string[] arguments)
 {
     switch (arguments[0])
     {
+        case "environment-snapshot":
+            File.AppendAllText(arguments[1], SecretTests.Hash(Environment.GetEnvironmentVariable("TD_LAYER"), Environment.GetEnvironmentVariable("TD_SECRET")) + "\n");
+            Console.WriteLine("environment received");
+            return 0;
         case "echo":
             File.WriteAllText(arguments[1], JsonSerializer.Serialize(new { args = arguments[2..], directory = Directory.GetCurrentDirectory(), environment = Environment.GetEnvironmentVariable("TOOLDOCK_TEST") }));
             Console.WriteLine("out {template}"); Console.Error.Write("err {template}"); return 0;

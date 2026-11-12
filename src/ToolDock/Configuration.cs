@@ -38,7 +38,7 @@ internal sealed class Paths
         Name = name.ToLowerInvariant();
         Root = ResolveRoot(root);
     }
-    private static string ResolveRoot(string? root) =>
+    internal static string ResolveRoot(string? root) =>
         Path.GetFullPath(root ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "ToolDock"));
 
     internal static string[] ListDaemons(string? root = null)
@@ -67,7 +67,7 @@ internal sealed record DaemonConfiguration
     public required string Executable { get; init; }
     public string[] Arguments { get; init; } = [];
     public string? WorkingDirectory { get; init; }
-    public Dictionary<string, string> Environment { get; init; } = [];
+    public Dictionary<string, JsonElement> Environment { get; init; } = [];
     public string Restart { get; init; } = "on-failure";
     public double RestartDelaySeconds { get; init; } = 5;
 }
@@ -77,8 +77,13 @@ internal sealed record LaunchSnapshot(string Executable, string[] Arguments, str
 {
     internal static LaunchSnapshot Load(Paths paths)
     {
-        var config = JsonSerializer.Deserialize<DaemonConfiguration>(File.ReadAllText(paths.ConfigurationFile), Settings.Json)
-            ?? throw new InvalidDataException("Configuration must be an object.");
+        DaemonConfiguration config;
+        try
+        {
+            config = JsonSerializer.Deserialize<DaemonConfiguration>(File.ReadAllText(paths.ConfigurationFile), Settings.Json)
+                ?? throw new InvalidDataException("Configuration must be an object.");
+        }
+        catch (JsonException) { throw new InvalidDataException("Invalid daemon configuration JSON or missing required properties."); }
         if (string.IsNullOrWhiteSpace(config.Executable) || config.Executable.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
             !config.Executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("executable must be an .exe file name on PATH.");
@@ -95,13 +100,7 @@ internal sealed record LaunchSnapshot(string Executable, string[] Arguments, str
             ?? throw new FileNotFoundException($"Executable not found on PATH: {config.Executable}");
         var environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (DictionaryEntry item in System.Environment.GetEnvironmentVariables()) environment[(string)item.Key] = (string)item.Value!;
-        if (config.Environment is null) throw new InvalidDataException("environment must be an object.");
-        foreach (var (key, value) in config.Environment)
-        {
-            if (key.Length == 0 || key.Contains('=') || key.Contains('\0') || value is null || value.Contains('\0'))
-                throw new InvalidDataException("Invalid environment variable.");
-            environment[key] = value;
-        }
+        EnvironmentSettings.Apply(paths.Root, config.Environment, environment);
         return new(Native.FinalPath(executable), config.Arguments, directory, environment, config.Restart, TimeSpan.FromSeconds(config.RestartDelaySeconds));
     }
 }
