@@ -1,0 +1,14 @@
+# Build output
+**/bin/
+**/obj/
+artifacts/
+
+# Local IDE settings
+.vs/
+.idea/
+*.user
+*.suo
+
+# Local execution output
+*.log
+TestResults/
