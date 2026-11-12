@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ToolDock/ToolDock.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ToolDock.Tests/ToolDock.Tests.csproj" />
+  </Folder>
+</Solution>

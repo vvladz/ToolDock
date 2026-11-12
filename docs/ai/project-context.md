@@ -2,7 +2,7 @@
 
 This document preserves decisions for AI-assisted development. User-facing instructions and inline examples belong in [README.md](../../README.md).
 
-Current implementation state: documentation only; the CLI has not been implemented. Requirements and acceptance checks below describe intended behavior, not completed tests.
+Current implementation: a .NET 10 Windows x64 CLI in `src/ToolDock`, with executable integration tests in `tests/ToolDock.Tests`. The requirements below remain the behavior contract; verification coverage and environment limitations are recorded at the end of this document.
 
 ## Scope and architecture
 
@@ -107,11 +107,14 @@ The state record describes the last runner launch, not each child attempt:
   "pid": 1234,
   "startedAtUtc": "2026-11-12T15:20:00Z",
   "finishedAtUtc": null,
-  "exitCode": null
+  "exitCode": null,
+  "runId": "86fd7885-9d3f-41b2-8da4-3a44b3e5fe63"
 }
 ```
 
 Publish the PID and start time at initialization, clearing the previous result to `null`. On controlled exit, record finish time and runner exit code. Replace complete snapshots through a temporary file and replacement of the destination.
+
+`runId` is an internal per-launch identifier used for the stop event and startup ownership. It is not included in the public `status --json` response. Short commands probe the exclusively locked byte by reading it; only a persistent runner acquires the lock.
 
 State read/write failures are operation errors. Short commands exit with `1`; the runner cancels retries, cleans up its Job, and exits with `1`. Failure to persist a result does not become success. No additional crash-consistency mechanism is required for the window between taking the lock and publishing the new snapshot.
 
@@ -173,7 +176,17 @@ A command timeout is an error. A failed or cancelled new `start` must clean up o
 - Verify file rotation and retention independently. Short commands never become additional log writers.
 - Verify JSON shape and the distinction between CLI exit status and runner `exitCode`. Stop and status still work after configuration edits or removal.
 
-## Implementation references
+## Build and verification
+
+Build with `dotnet build ToolDock.slnx -c Release`. Run the integration executable with `dotnet run --project tests/ToolDock.Tests -c Release`. Tests use isolated directories under `artifacts/tests/` and do not modify the user's ToolDock configuration.
+
+The suite exercises argument quoting, environment and working-directory handling, both output streams, exit policies, case-insensitive duplicate protection, stop during retry, snapshot retention after configuration edits, state failures, file rotation and retention, startup acknowledgement, concurrent starts, cancelled startup ownership, and Job cleanup on retry and runner death.
+
+The current execution environment places even the interactive shell in an external Job that forbids detachment. Tests report this explicitly and inject a contained native launcher only into test calls to exercise the remaining background protocol. The public CLI always requires detachment; it has no override to bypass this requirement.
+
+Detached lifetime and explicit breakaway remain unverified in this environment. The suite includes a breakaway/output-drain scenario for an environment permitting detachment and separately checks cancellation of output reads while a writer remains open. Cross-session control, actual console closure/Ctrl+C, and the user's SSH launch mechanism still require validation in their target environments.
+
+## API references
 
 - [Process creation flags](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)
 - [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
