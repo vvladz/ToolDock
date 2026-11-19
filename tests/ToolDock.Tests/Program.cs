@@ -12,7 +12,6 @@ Directory.CreateDirectory(Path.Combine(root, "tools"));
 Environment.SetEnvironmentVariable("PATH", AppContext.BaseDirectory + ";" + Environment.GetEnvironmentVariable("PATH"));
 var active = new List<Paths>();
 var passed = 0;
-var detachedSupported = true;
 try
 {
     await Test("CLI rejects invalid commands", async () => Check(await Cli.ExecuteAsync(["unknown", "x"], root) == 2));
@@ -153,20 +152,7 @@ try
         Check(files.Any(f => Path.GetFileNameWithoutExtension(f).Contains('_')));
         return Task.CompletedTask;
     });
-    await Test("detachment succeeds or is explicitly rejected by the host", () =>
-    {
-        try
-        {
-            using var child = Native.CreateProcess(Environment.ProcessPath!, ["fixture", "wait"], detached: true);
-            child.Kill();
-        }
-        catch (InvalidOperationException error) when (error.Message.Contains("prevents detaching"))
-        {
-            detachedSupported = false;
-            Console.WriteLine("UNVERIFIED: detached lifetime and explicit breakaway; the host forbids leaving its Job. Remaining background tests use a contained native launcher injected into the test call only.");
-        }
-        return Task.CompletedTask;
-    });
+    await JobTests.RunAsync(root, Test);
     await Test("background acknowledgement, independent IDs and runner-death cleanup", async () =>
     {
         var first = Config("background-one", ["tree", Path.Combine(root, "ordinary.pid")], "always");
@@ -234,7 +220,7 @@ try
         Check(StateStore.Active(existing));
         await Cli.StopAsync(existing);
     });
-    if (detachedSupported) await Test("breakaway survives stop and inherited output has bounded drain", async () =>
+    await Test("breakaway survives stop and inherited output has bounded drain", async () =>
     {
         var marker = Path.Combine(root, "breakaway.pid");
         var paths = Config("breakaway", ["breakaway", marker], "never");
@@ -285,8 +271,7 @@ static async Task<(int Code, string Output)> List(string root)
     }
     finally { Console.SetOut(original); }
 }
-Task<string> Start(Paths paths) => Cli.StartAsync(paths, launch: detachedSupported ? null :
-    (executable, arguments) => Native.CreateProcess(executable, arguments));
+Task<string> Start(Paths paths) => Cli.StartAsync(paths);
 string Logs(Paths paths) => string.Join('\n', Directory.GetFiles(paths.LogDirectory, "*.log").Select(File.ReadAllText));
 async Task Test(string name, Func<Task> test) { await test().WaitAsync(TimeSpan.FromSeconds(45)); passed++; Console.WriteLine($"PASS {name}"); }
 static void Check(bool condition, string? message = null) { if (!condition) throw new Exception(message ?? "Assertion failed."); }
@@ -300,6 +285,7 @@ static async Task<int> Fixture(string[] arguments)
 {
     switch (arguments[0])
     {
+        case "job-start": return await JobTests.StartAsync(arguments[1..]);
         case "environment-snapshot":
             File.AppendAllText(arguments[1], SecretTests.Hash(Environment.GetEnvironmentVariable("TD_LAYER"), Environment.GetEnvironmentVariable("TD_SECRET")) + "\n");
             Console.WriteLine("environment received");

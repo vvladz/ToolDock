@@ -65,7 +65,11 @@ The detached runner and its managed group must survive the short command exiting
 
 Create the background runner without a console, inherited standard streams, or unrelated inherited handles. Create the daemon without a console and with explicitly redirected streams. `CREATE_NO_WINDOW` provides console-free creation for console executables.
 
-`FreeConsole` changes console attachment only. A process already assigned to a Job cannot simply detach from it. Resolve external Job separation when creating the background runner using applicable breakaway rules. A dedicated daemon Job does not cancel external Job restrictions. Fail startup if required detachment or group management cannot be established.
+`FreeConsole` changes console attachment only. A process already assigned to a Job cannot simply detach from it. Resolve external Job separation when creating the background runner using applicable breakaway rules. Request explicit breakaway when the caller is in a Job; retry without that flag only if the caller's immediate Job permits silent breakaway. A dedicated daemon Job does not cancel external Job restrictions. Fail startup if process creation, the background Job check, or group management fails.
+
+Do not require `IsProcessInJob` to become false after breakaway: Windows can assign a new process to a system-managed Job independently of its launching shell. Before taking a daemon lock or creating a daemon, the background runner queries its own immediate Job. Accept no Job, or a Job whose only limit flags are `JOB_OBJECT_LIMIT_BREAKAWAY_OK`, `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK`, or both. Reject a Job with no breakaway permission or any additional limits, including `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, and return the error through the startup acknowledgement pipe.
+
+`QueryInformationJobObject(NULL, ...)` describes only the immediate Job, not all ancestors. This check does not prove arbitrary nested Job hierarchies safe; hosts with other lifetime constraints still need target-environment verification. Do not add a broker or bypass a host that rejects breakaway.
 
 A separate process still has a parent relationship. Verify actual launch environments, including the user's SSH mechanism and sign-in launcher, against console closure, external Jobs, and other descendant-termination mechanisms.
 
@@ -210,13 +214,13 @@ A command timeout is an error. A failed or cancelled new `start` must clean up o
 
 ## Build and verification
 
-Build with `dotnet build ToolDock.slnx -c Release`. Run the integration executable with `dotnet run --project tests/ToolDock.Tests -c Release`. Tests use isolated directories under `artifacts/tests/` and do not modify the user's ToolDock configuration.
+Build with `dotnet build ToolDock.slnx -c Release`. Run the integration executable directly with `& './tests/ToolDock.Tests/bin/Release/net10.0-windows/win-x64/ToolDock.Tests.exe'`. Do not use `dotnet run` for detached-lifetime tests: it can introduce a restrictive `KILL_ON_JOB_CLOSE` Job. Tests use isolated directories under `artifacts/tests/` and do not modify the user's ToolDock configuration.
 
 The suite exercises argument quoting, environment and working-directory handling, both output streams, exit policies, case-insensitive duplicate protection, stop during retry, snapshot retention after configuration edits, state failures, file rotation and retention, startup acknowledgement, concurrent starts, cancelled startup ownership, and Job cleanup on retry and runner death.
 
-The current execution environment places even the interactive shell in an external Job that forbids detachment. Tests report this explicitly and inject a contained native launcher only into test calls to exercise the remaining background protocol. The public CLI always requires detachment; it has no override to bypass this requirement.
+Background tests use the production detached launcher. They require a host permitting breakaway and no longer substitute a contained launcher when detachment fails. The suite creates its own explicit-breakaway and silent-breakaway Jobs, closes them, and verifies that the runner and its daemon descendants remain alive and can be stopped. It also rejects both an immediate restrictive Job and a restrictive ancestor above a breakaway Job, before launching a daemon.
 
-Detached lifetime and explicit breakaway remain unverified in this environment. The suite includes a breakaway/output-drain scenario for an environment permitting detachment and separately checks cancellation of output reads while a writer remains open. Cross-session control, actual console closure/Ctrl+C, and the user's SSH launch mechanism still require validation in their target environments.
+The suite also verifies that an explicit breakaway descendant survives stop without blocking output drain. The integration executable passed all 30 scenarios when run directly, including from Windows Terminal. Cross-session control, actual console closure/Ctrl+C, and the user's SSH launch mechanism still require validation in their target environments.
 
 ## API references
 
@@ -225,6 +229,9 @@ Detached lifetime and explicit breakaway remain unverified in this environment. 
 
 - [Process creation flags](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)
 - [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
+- [Nested Jobs](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs)
+- [QueryInformationJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-queryinformationjobobject)
+- [Desktop Activity Moderator](https://learn.microsoft.com/en-us/windows/compatibility/desktop-activity-moderator)
 - [Creating a process directly in a Job](https://devblogs.microsoft.com/oldnewthing/20230209-00/?p=107812)
 - [Job limit flags](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_limit_information)
 - [Kernel object namespaces](https://learn.microsoft.com/en-us/windows/win32/termserv/kernel-object-namespaces)

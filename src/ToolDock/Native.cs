@@ -16,6 +16,8 @@ internal sealed class KernelHandle : SafeHandleZeroOrMinusOneIsInvalid
 internal static class Native
 {
     internal const uint Suspended = 4, NoWindow = 0x08000000, Breakaway = 0x01000000;
+    private const uint BreakawayOk = 0x800, SilentBreakawayOk = 0x1000;
+    private const string DetachmentError = "The launch environment prevents detaching the runner from its Job.";
     internal static void Check(bool success)
     {
         if (!success) throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -98,28 +100,41 @@ internal static class Native
                 environmentBlock = Marshal.StringToHGlobalUni(string.Join('\0', environment.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).Select(x => $"{x.Key}={x.Value}")) + "\0\0");
             var created = CreateProcessW(executable, command, 0, 0, streams is not null, flags,
                 environmentBlock, directory, ref startup, out var process);
-            // A host may allow silent breakaway but reject an explicit breakaway flag.
-            // The suspended child must still pass the no-external-Job check below.
+            // Retry without the flag only when the host explicitly allows silent breakaway.
             if (!created && detached && (flags & Breakaway) != 0 && Marshal.GetLastWin32Error() == 5)
             {
+                if ((CurrentJobLimits().GetValueOrDefault() & SilentBreakawayOk) == 0)
+                    throw new InvalidOperationException(DetachmentError);
                 command = new StringBuilder(string.Join(' ', new[] { executable }.Concat(arguments).Select(Quote)));
                 created = CreateProcessW(executable, command, 0, 0, false, flags & ~Breakaway,
                     environmentBlock, directory, ref startup, out process);
             }
             Check(created);
-            var child = new ChildProcess(new KernelHandle(process.Process), new KernelHandle(process.Thread), process.ProcessId);
-            try
-            {
-                if (detached && IsInJob(process.Process))
-                    throw new InvalidOperationException("The launch environment prevents detaching the runner from its Job.");
-                return child;
-            }
-            catch { child.Kill(); child.Dispose(); throw; }
+            return new ChildProcess(new KernelHandle(process.Process), new KernelHandle(process.Thread), process.ProcessId);
         }
         finally { if (environmentBlock != 0) Marshal.FreeHGlobal(environmentBlock); }
     }
 
     private static bool IsInJob(nint process) { Check(IsProcessInJob(process, 0, out var result)); return result; }
+
+    private static uint? CurrentJobLimits()
+    {
+        if (!IsInJob(new nint(-1))) return null;
+        Check(QueryInformationJobObject(0, 9, out ExtendedLimits limits, (uint)Marshal.SizeOf<ExtendedLimits>(), 0));
+        return limits.Basic.Flags;
+    }
+
+    internal static void ValidateBackgroundJob()
+    {
+        // Windows can place even a breakaway process in a system-managed Job.
+        // Inspect it from the runner, before acquiring state or starting a daemon.
+        // A NULL Job handle queries only the immediate Job, not its ancestors.
+        var limits = CurrentJobLimits();
+        if (limits is null) return;
+        const uint allowed = BreakawayOk | SilentBreakawayOk;
+        if (limits == 0 || (limits.Value & ~allowed) != 0)
+            throw new InvalidOperationException($"{DetachmentError} Remaining Job limits: 0x{limits:X}.");
+    }
 
     internal static KernelHandle CreateStopEvent(string name)
     {
@@ -171,6 +186,7 @@ internal static class Native
     [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)] private static extern KernelHandle CreateJobObjectW(nint attributes, string? name);
     [DllImport("kernel32", SetLastError = true)] private static extern bool SetInformationJobObject(KernelHandle job, int kind, ref ExtendedLimits info, uint size);
     [DllImport("kernel32", SetLastError = true)] private static extern bool QueryInformationJobObject(KernelHandle job, int kind, out Accounting info, uint size, nint returned);
+    [DllImport("kernel32", SetLastError = true)] private static extern bool QueryInformationJobObject(nint job, int kind, out ExtendedLimits info, uint size, nint returned);
     [DllImport("kernel32", SetLastError = true)] private static extern bool TerminateJobObject(KernelHandle job, uint code);
     [DllImport("kernel32", SetLastError = true)] private static extern bool IsProcessInJob(nint process, nint job, [MarshalAs(UnmanagedType.Bool)] out bool result);
     [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool CreateProcessW(string app, StringBuilder command, nint processAttributes, nint threadAttributes, bool inherit, uint flags, nint environment, string? directory, ref StartupInfoEx startup, out ProcessInfo process);

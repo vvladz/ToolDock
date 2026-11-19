@@ -268,7 +268,7 @@ Each daemon needs its own configuration file. Re-running the script does not cre
 - **Working directory not found:** create it and check that a relative path is resolved from the configuration file's directory.
 - **Configuration changes have no effect:** stop and start the daemon to load the new settings.
 - **State access error:** check access to `$HOME/.config/ToolDock/state/`. The command reports an error rather than treating unreadable state as a stopped daemon.
-- **Background launch fails under a host or SSH session:** that environment may prevent the runner from detaching from its process group. ToolDock reports the launch failure; launch support must be verified for that environment.
+- **Background launch fails under a host or SSH session:** run the built `ToolDock.exe` directly. `dotnet run` can place it in a Job that prevents detachment. ToolDock permits a remaining Job with only breakaway permissions, but rejects one with additional limits, such as terminating its processes when closed. Other host restrictions and nested Jobs still require launch-environment verification.
 
 ToolDock stores configuration, logs, and runtime state separately:
 

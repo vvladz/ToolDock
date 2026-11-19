@@ -110,6 +110,12 @@ internal static class Program
         connecting.CancelAfter(Settings.StartTimeout);
         await pipe.ConnectAsync(connecting.Token);
         using var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
+        try { Native.ValidateBackgroundJob(); }
+        catch (Exception error)
+        {
+            await writer.WriteLineAsync(JsonSerializer.Serialize(new StartupResult(false, error.Message)));
+            return 1;
+        }
         return await Runner.RunAsync(paths, runId, false, result => writer.WriteLineAsync(JsonSerializer.Serialize(result)), token);
     }
 
