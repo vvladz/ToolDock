@@ -10,7 +10,7 @@ ToolDock is a user-level daemon runner for modern Windows on AMD64/x64. One pers
 
 ToolDock and the installation manager are independent projects. Their shared interface is an executable name and arguments. ToolDock does not read installation manifests or manage installed versions, installation directories, `current` links, builds, updates, or cleanup of installed copies.
 
-External scripts select daemons and arrange startup, including startup at sign-in. A brief console window from the external PowerShell launcher is acceptable. Scheduling, CI/CD, and recovery of the runner itself remain external operations. Packaging will be decided during implementation; old Windows and other architectures are outside the target scope.
+External deployment arranges startup, including startup at sign-in. `start --all` selects all configured daemons; callers may also select individual names. A brief console window from an external launcher is acceptable. Scheduling, installation, updates and recovery of the runner itself remain external operations. Old Windows and other architectures are outside the target scope.
 
 ## Identity and files
 
@@ -37,6 +37,7 @@ Configuration edits do not change a running instance or trigger reload. A new ru
 | Command | Behavior |
 | --- | --- |
 | `start <daemon>` | Create a detached runner, wait for its first process-start acknowledgement, and exit |
+| `start --all` | Sequentially start all configured daemons, reporting per-daemon results and aggregate failure |
 | `run <daemon>` | Become the persistent runner in the invoking environment |
 | `stop <daemon>` | Signal the runner and wait for shutdown |
 | `status <daemon> [--json]` | Report runner activity and its last recorded result |
@@ -61,6 +62,8 @@ The runner records `0` for successful child completion or successful manual stop
 
 ## Background lifetime
 
+`start --all` enumerates the same top-level names as `list`, but a missing configuration directory is an error. An existing empty directory succeeds with an explicit message. Per-daemon configuration and startup failures do not stop the loop; any failure makes the final exit code `1`. Already running daemons succeed without restarting. Cancellation stops the loop, preserving earlier successful starts. Directory enumeration failures remain global errors.
+
 The detached runner and its managed group must survive the short command exiting and its console closing in supported environments. `start` waits for acknowledgement and exits; the persistent runner has another PID.
 
 Create the background runner without a console, inherited standard streams, or unrelated inherited handles. Create the daemon without a console and with explicitly redirected streams. `CREATE_NO_WINDOW` provides console-free creation for console executables.
@@ -75,9 +78,9 @@ A separate process still has a parent relationship. Verify actual launch environ
 
 ## Configuration and launch snapshot
 
-The user guide defines fields and examples. Required: `executable`, an `.exe` file name. Defaults: `arguments: []`, `environment: {}`, the configuration directory as `workingDirectory`, `restart: "on-failure"`, and `restartDelaySeconds: 5`.
+The user guide defines fields and examples. Required: `executable`, an explicit `.exe` or `.cmd` file name on PATH. Defaults: `arguments: []`, `environment: {}`, the configuration directory as `workingDirectory`, `restart: "on-failure"`, and `restartDelaySeconds: 5`.
 
-Arguments are an array of strings, passed without a shell or ToolDock substitutions. Serialize them using appropriate Windows command-line quoting; users should only need JSON escaping. The program interprets its own argument values and paths.
+Arguments are an array of literal strings. EXEs use native Windows argument quoting. CMD launchers use the system-directory `cmd.exe` with `/d /e:on /v:off /s /c` and separate quoting, including protection against percent expansion. A launcher must wait for the application and return its exit code. The shell is created in the attempt's Job, with the same redirected streams and descendant cleanup as an EXE. Startup acknowledges shell creation, not the application's readiness. CMD paths containing percent signs or carets, argument line breaks, UNC working directories and command lines exceeding 8191 characters are rejected. EXE argument behavior is unchanged.
 
 The working directory must exist. Resolve relative directories from the JSON file's directory. Environment overrides apply to the child; other variables are inherited. Executable selection uses the runner's original `PATH`, not a child environment override.
 
@@ -107,7 +110,7 @@ On each runner launch:
 6. Read stdout and stderr while waiting for child exit or a stop request.
 7. If needed, clean up the old attempt, wait the configured delay, and retry from the same snapshot.
 
-Retries reuse the selected path; a new runner reads JSON and resolves `PATH` again. Switching an installation link does not redirect an existing runner. The snapshot does not copy or freeze executable contents, the working directory, or external files. Keeping the selected program files available is an external responsibility.
+Retries reuse the selected EXE or CMD path; a new runner reads JSON and resolves `PATH` again. A CMD launcher executes again on every retry and may select an updated program using its own version marker. ToolDock does not parse that marker or pin the launcher's target. Arguments, environment, working directory and restart settings remain snapshotted. Direct EXE launches retain the resolved physical EXE path. The snapshot does not copy or freeze file contents; keeping required files available is an external responsibility.
 
 ## Process groups and retries
 
@@ -199,6 +202,8 @@ A command timeout is an error. A failed or cancelled new `start` must clean up o
 - New `start` returns after the first daemon process starts; runner and group survive command exit and console closure in supported environments.
 - Different IDs run one EXE independently. Repeating an ID, including a case variant or an ID held by direct `run`, creates no duplicate daemon.
 - A bad configuration affects only its own instance.
+- CMD launchers forward literal arguments and exit codes, remain inside the managed Job, and can select a newly installed version on retry without reloading daemon settings.
+- `start --all` continues after per-daemon errors, preserves already running instances and reports aggregate failure.
 - Stop and runner death terminate remaining Job members. Ordinary descendants stay managed; explicit permitted breakaway descendants survive. Clean the previous Job before retrying.
 - A stop during startup or retry delay prevents subsequent launches by that runner.
 - Both output streams are serviced concurrently. Log lines retain their origin and do not interleave character by character.

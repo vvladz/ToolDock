@@ -92,7 +92,11 @@ internal static class Native
         }
         uint flags = Suspended | NoWindow | 0x400 | 0x80000;
         if (breakaway || (detached && IsInJob(new nint(-1)))) flags |= Breakaway;
-        var command = new StringBuilder(string.Join(' ', new[] { executable }.Concat(arguments).Select(Quote)));
+        var isCmd = executable.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase);
+        var commandText = isCmd ? CmdCommand.Build(executable, arguments)
+            : string.Join(' ', new[] { executable }.Concat(arguments).Select(Quote));
+        if (isCmd) executable = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        var command = new StringBuilder(commandText);
         nint environmentBlock = 0;
         try
         {
@@ -105,7 +109,7 @@ internal static class Native
             {
                 if ((CurrentJobLimits().GetValueOrDefault() & SilentBreakawayOk) == 0)
                     throw new InvalidOperationException(DetachmentError);
-                command = new StringBuilder(string.Join(' ', new[] { executable }.Concat(arguments).Select(Quote)));
+                command = new StringBuilder(commandText);
                 created = CreateProcessW(executable, command, 0, 0, false, flags & ~Breakaway,
                     environmentBlock, directory, ref startup, out process);
             }

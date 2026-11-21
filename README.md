@@ -43,7 +43,7 @@ For example, create `work-tunnel.json`:
 
 | Field | Description | Default |
 | --- | --- | --- |
-| `executable` | An `.exe` file name to find on ToolDock's `PATH` | Required |
+| `executable` | An `.exe` or `.cmd` file name to find on ToolDock's `PATH` | Required |
 | `arguments` | An array of argument strings | `[]` |
 | `workingDirectory` | An existing working directory for the program | The configuration file's directory |
 | `environment` | Environment variables or secret references for this program | `{}`; Windows and global values are inherited |
@@ -52,7 +52,7 @@ For example, create `work-tunnel.json`:
 
 Relative working directories are resolved from the configuration file's directory. In this example, `./data/work` means `$HOME/.config/ToolDock/tools/data/work`. Create that directory before starting the daemon. The program interprets `work.json` relative to its own working directory.
 
-Write each argument as a separate JSON string, including arguments that contain spaces. ToolDock handles command-line quoting; it does not run a shell or expand variables in arguments. For example:
+Write each argument as a separate JSON string, including arguments that contain spaces. ToolDock handles command-line quoting and passes argument values literally. EXEs run directly. For example:
 
 ```json
 {
@@ -62,6 +62,19 @@ Write each argument as a separate JSON string, including arguments that contain 
 ```
 
 An `environment` override applies to the child program. It does not change the `PATH` ToolDock uses to select the executable.
+
+For a ToolBox command launcher, use its explicit `.cmd` name:
+
+```json
+{
+  "executable": "FarShell.Broker.cmd",
+  "restart": "on-failure"
+}
+```
+
+CMD launchers run through the Windows system `cmd.exe`, with AutoRun and delayed expansion disabled. The launcher must wait for its program and return that program's exit code; ToolBox launchers already do this. The shell and its ordinary descendants are managed together. `start` acknowledges creation of the shell, not readiness of the application it launches.
+
+CMD launchers require a local working directory. Their resolved paths cannot contain `%` or `^`; arguments cannot contain line breaks, and the encoded command line is limited to 8191 characters. EXE launches retain their existing argument and path behavior.
 
 ## Global environment
 
@@ -162,7 +175,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 ```
 
-Automatic restarts keep using the executable path and settings selected at the beginning of the runner's lifetime. Switching a link to a different installed copy does not change that selection. Keep the selected program files available while its runner is active.
+Automatic restarts keep using the EXE or CMD path and settings selected at the beginning of the runner's lifetime. A CMD launcher executes again on each attempt. A ToolBox launcher reads `installed` again, so a retry or fresh start selects the currently installed version. An already running application is not restarted when ToolBox updates it. Direct EXE launches continue using the originally resolved physical path. Keep the files needed by an active runner available.
 
 ## List daemons
 
@@ -228,6 +241,7 @@ Logs use UTF-8 and UTC timestamps. They rotate daily and at approximately 20 MiB
 
 ```text
 ToolDock.exe start <daemon>
+ToolDock.exe start --all
 ToolDock.exe run <daemon>
 ToolDock.exe stop <daemon>
 ToolDock.exe status <daemon> [--json]
@@ -253,14 +267,15 @@ A successful `status` command returns `0` even when the reported status is `fail
 
 ## Start at sign-in
 
-Use an external PowerShell script or your preferred sign-in mechanism to select and start daemons:
+Configure Task Scheduler or your preferred sign-in mechanism to start all configured daemons:
 
 ```powershell
-ToolDock.exe start work-tunnel
-ToolDock.exe start personal-tunnel
+ToolDock.exe start --all
 ```
 
-Each daemon needs its own configuration file. Re-running the script does not create duplicate instances. ToolDock handles child program restarts; restarting a failed ToolDock runner is the responsibility of the external launcher.
+Each daemon needs its own configuration file. Daemons are started sequentially in filename order. Already running daemons succeed without restarting. A failed daemon does not prevent the remaining daemons from starting. Results are printed per daemon, followed by totals; exit code is `1` if any daemon failed and `0` otherwise. Cancellation stops further starts and leaves previously started daemons running.
+
+A missing `tools` directory is an error for `start --all`. An existing empty directory succeeds with `No daemons configured.` The `list` command continues to allow a missing directory. ToolDock handles child program restarts; restarting a failed ToolDock runner is the responsibility of the external launcher.
 
 ## Troubleshooting
 

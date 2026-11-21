@@ -11,6 +11,7 @@ internal static class Program
         ToolDock - user daemon runner for Windows
 
         ToolDock.exe start <daemon>
+        ToolDock.exe start --all
         ToolDock.exe run <daemon>
         ToolDock.exe stop <daemon>
         ToolDock.exe status <daemon> [--json]
@@ -36,6 +37,7 @@ internal static class Program
             if (args is ["--help"]) { Console.WriteLine(Help); return 0; }
             if (args is ["--version"]) { Console.WriteLine(Assembly.GetExecutingAssembly().GetName().Version); return 0; }
             if (args.FirstOrDefault() == "secret") return await SecretCommands.ExecuteAsync(args, root, cancellation);
+            if (args is ["start", "--all"]) return await StartAllAsync(root, cancellation);
             if (args is ["list"])
             {
                 foreach (var name in Paths.ListDaemons(root)) Console.WriteLine(name);
@@ -65,6 +67,27 @@ internal static class Program
         catch (Exception error) { Console.Error.WriteLine(error.Message); return 1; }
     }
 
+    private static async Task<int> StartAllAsync(string? root, CancellationToken cancellation)
+    {
+        var daemons = Paths.ListDaemons(root, requireDirectory: true);
+        var succeeded = 0;
+        foreach (var daemon in daemons)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            try
+            {
+                var result = await StartAsync(new Paths(daemon, root), cancellation);
+                Console.WriteLine($"{daemon}: {result}");
+                succeeded++;
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
+            catch (Exception error) { Console.Error.WriteLine($"{daemon}: {error.Message}"); }
+        }
+        if (daemons.Length == 0) Console.WriteLine("No daemons configured.");
+        Console.WriteLine($"Daemons: {succeeded} succeeded, {daemons.Length - succeeded} failed.");
+        return succeeded == daemons.Length ? 0 : 1;
+    }
+
     internal static async Task<string> StartAsync(Paths paths, CancellationToken cancellation = default,
         Func<string, string[], ChildProcess>? launch = null)
     {
@@ -84,7 +107,7 @@ internal static class Program
             var connected = pipe.WaitForConnectionAsync(timeout.Token);
             var exited = child.WaitAsync(timeout.Token);
             if (await Task.WhenAny(connected, exited) == exited && !pipe.IsConnected)
-                throw new IOException("Background runner exited before connecting.");
+                throw new IOException($"Background runner exited before connecting (exit code {child.ExitCode}).");
             await connected;
             using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
             var line = await reader.ReadLineAsync(timeout.Token) ?? throw new IOException("Runner did not acknowledge startup.");

@@ -47,6 +47,8 @@ try
         Check(await Cli.ExecuteAsync(["list", "--json"], root) == 2);
     });
     await SecretTests.RunAsync(root, Test);
+    await CmdTests.RunAsync(root, Test);
+    await StartAllTests.RunAsync(root, Test);
     await Test("argument quoting, environment, working directory and output origins", async () =>
     {
         var result = Path.Combine(root, "arguments.json");
@@ -285,6 +287,7 @@ static async Task<int> Fixture(string[] arguments)
 {
     switch (arguments[0])
     {
+        case "cli": return await Cli.ExecuteAsync(arguments[2..], arguments[1]);
         case "job-start": return await JobTests.StartAsync(arguments[1..]);
         case "environment-snapshot":
             File.AppendAllText(arguments[1], SecretTests.Hash(Environment.GetEnvironmentVariable("TD_LAYER"), Environment.GetEnvironmentVariable("TD_SECRET")) + "\n");
@@ -295,6 +298,9 @@ static async Task<int> Fixture(string[] arguments)
             Console.WriteLine("out {template}"); Console.Error.Write("err {template}"); return 0;
         case "exit": return int.Parse(arguments[1]);
         case "count": File.AppendAllText(arguments[1], "attempt\n"); return int.Parse(arguments[2]);
+        case "version-count":
+            File.AppendAllText(arguments[1], Path.GetFileName(Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory)) + "\n");
+            return 1;
         case "mark-wait": File.AppendAllText(arguments[1], "attempt\n"); break;
         case "burst":
             await Task.WhenAll(Task.Run(() => { for (var i = 0; i < 1000; i++) Console.WriteLine($"output {i}"); }),

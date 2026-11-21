@@ -41,7 +41,7 @@ internal sealed class Paths
     internal static string ResolveRoot(string? root) =>
         Path.GetFullPath(root ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "ToolDock"));
 
-    internal static string[] ListDaemons(string? root = null)
+    internal static string[] ListDaemons(string? root = null, bool requireDirectory = false)
     {
         try
         {
@@ -52,7 +52,7 @@ internal sealed class Paths
                 .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
         }
-        catch (DirectoryNotFoundException) { return []; }
+        catch (DirectoryNotFoundException) when (!requireDirectory) { return []; }
     }
 
     internal string EventName(Guid runId)
@@ -85,8 +85,9 @@ internal sealed record LaunchSnapshot(string Executable, string[] Arguments, str
         }
         catch (JsonException) { throw new InvalidDataException("Invalid daemon configuration JSON or missing required properties."); }
         if (string.IsNullOrWhiteSpace(config.Executable) || config.Executable.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
-            !config.Executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("executable must be an .exe file name on PATH.");
+            !(config.Executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+              config.Executable.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidDataException("executable must be an .exe or .cmd file name on PATH.");
         if (config.Arguments is null || config.Arguments.Any(x => x is null || x.Contains('\0')))
             throw new InvalidDataException("arguments must be an array of strings without NUL characters.");
         if (config.Restart is not ("never" or "on-failure" or "always") || !double.IsFinite(config.RestartDelaySeconds) ||
@@ -94,6 +95,8 @@ internal sealed record LaunchSnapshot(string Executable, string[] Arguments, str
             throw new InvalidDataException("Invalid restart policy or positive restartDelaySeconds.");
         var directory = Path.GetFullPath(config.WorkingDirectory ?? ".", Path.GetDirectoryName(paths.ConfigurationFile)!);
         if (!System.IO.Directory.Exists(directory)) throw new DirectoryNotFoundException($"Working directory does not exist: {directory}");
+        if (config.Executable.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) && directory.StartsWith(@"\\"))
+            throw new InvalidDataException("CMD launchers require a local workingDirectory.");
         var executable = (System.Environment.GetEnvironmentVariable("PATH") ?? "").Split(';')
             .Select(p => p.Trim().Trim('"')).Where(p => p.Length > 0)
             .Select(p => Path.Combine(Path.GetFullPath(p), config.Executable)).FirstOrDefault(File.Exists)
