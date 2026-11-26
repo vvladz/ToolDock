@@ -105,15 +105,15 @@ try
         var paths = Config("retry", ["count", marker, "1"], "on-failure", 0.4);
         active.Add(paths);
         var running = Run(paths);
-        await Until(() => File.Exists(marker) && File.ReadAllLines(marker).Length >= 1);
+        await Until(() => File.Exists(marker) && FixtureFiles.ReadLines(marker).Length >= 1);
         File.WriteAllText(paths.ConfigurationFile, "invalid replacement");
-        await Until(() => File.ReadAllLines(marker).Length >= 2);
+        await Until(() => FixtureFiles.ReadLines(marker).Length >= 2);
         Check(StateStore.Status(paths).Status == "running");
         await Cli.StopAsync(paths);
         Check(await running == 0);
-        var count = File.ReadAllLines(marker).Length;
+        var count = FixtureFiles.ReadLines(marker).Length;
         await Task.Delay(600);
-        Check(File.ReadAllLines(marker).Length == count);
+        Check(FixtureFiles.ReadLines(marker).Length == count);
     });
     await Test("state write failure terminates runner", async () =>
     {
@@ -137,8 +137,8 @@ try
         var paths = Config("tree-retry", ["tree-exit", marker], "always", 0.2);
         active.Add(paths);
         var running = Run(paths);
-        await Until(() => File.Exists(marker) && File.ReadAllLines(marker).Length >= 2);
-        var firstPid = int.Parse(File.ReadAllLines(marker)[0]);
+        await Until(() => File.Exists(marker) && FixtureFiles.ReadLines(marker).Length >= 2);
+        var firstPid = int.Parse(FixtureFiles.ReadLines(marker)[0]);
         try { using var first = Process.GetProcessById(firstPid); Check(first.HasExited); }
         catch (ArgumentException) { }
         await Cli.StopAsync(paths);
@@ -187,7 +187,7 @@ try
         var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Start(paths)));
         Check(results.Count(x => x == "started") == 1);
         await Until(() => File.Exists(marker));
-        Check(File.ReadAllLines(marker).Length == 1);
+        Check(FixtureFiles.ReadLines(marker).Length == 1);
         await Cli.StopAsync(paths);
     });
     await Test("failed background startup reports configuration error and leaves no runner", async () =>
@@ -312,13 +312,13 @@ static async Task<int> Fixture(string[] arguments)
             return 0;
         case "tree":
             using (var child = Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, ArgumentList = { "fixture", "wait" } })!)
-                File.WriteAllText(arguments[1], child.Id.ToString());
+                FixtureFiles.WriteOnce(arguments[1], child.Id.ToString());
             break;
         case "breakaway":
             using (var child = Native.CreateProcess(Environment.ProcessPath!, ["fixture", "wait"],
                 streams: [GetStdHandle(-10), GetStdHandle(-11), GetStdHandle(-12)], breakaway: true))
             {
-                child.Resume(); File.WriteAllText(arguments[1], child.Id.ToString());
+                child.Resume(); FixtureFiles.WriteOnce(arguments[1], child.Id.ToString());
             }
             break;
     }

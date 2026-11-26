@@ -124,16 +124,16 @@ internal static class SecretTests
             var running = Runner.RunAsync(paths, Guid.NewGuid(), false, _ => Task.CompletedTask, stopping.Token);
             try
             {
-                await Until(() => File.Exists(marker) && File.ReadAllLines(marker).Length >= 1);
+                await Until(() => File.Exists(marker) && FixtureFiles.ReadLines(marker).Length >= 1);
                 WriteGlobal(root, new { TD_LAYER = "new-global" });
                 store.Set("example", "new-test-secret");
-                await Until(() => File.ReadAllLines(marker).Length >= 2);
+                await Until(() => FixtureFiles.ReadLines(marker).Length >= 2);
             }
             finally { stopping.Cancel(); Check(await running == 0); }
-            Check(File.ReadAllLines(marker).All(line => line == Hash("old-global", "old-test-secret")));
+            Check(FixtureFiles.ReadLines(marker).All(line => line == Hash("old-global", "old-test-secret")));
             Configure(root, new { TD_SECRET = new { secret = "example" } }, marker, "never");
             Check(await Runner.RunAsync(paths, Guid.NewGuid(), false, _ => Task.CompletedTask, default) == 0);
-            Check(File.ReadAllLines(marker)[^1] == Hash("new-global", "new-test-secret"));
+            Check(FixtureFiles.ReadLines(marker)[^1] == Hash("new-global", "new-test-secret"));
             foreach (var log in Directory.GetFiles(paths.LogDirectory, "*.log"))
             {
                 var text = File.ReadAllText(log);

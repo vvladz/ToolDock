@@ -6,19 +6,19 @@ Target platform: modern Windows on AMD64/x64, without administrator privileges.
 
 ## Build and run
 
-Install the .NET 10 SDK on Windows, then build from the repository root:
+Install the .NET 11 SDK on Windows, then build from the repository root:
 
 ```powershell
 dotnet build ToolDock.slnx -c Release
 ```
 
-The CLI is generated in `src/ToolDock/bin/Release/net10.0-windows/win-x64/`. Keep that directory's files together. Add it to your `PATH`, or invoke the executable by its full path:
+The CLI is generated in `src/ToolDock/bin/Release/net11.0-windows/win-x64/`. Keep that directory's files together. Add it to your `PATH`, or invoke the executable by its full path:
 
 ```powershell
-& './src/ToolDock/bin/Release/net10.0-windows/win-x64/ToolDock.exe' --help
+& './src/ToolDock/bin/Release/net11.0-windows/win-x64/ToolDock.exe' --help
 ```
 
-This build requires the .NET 10 runtime. Configuration is stored in your user profile independently of the executable directory.
+This build requires the .NET 11 runtime. Configuration is stored in your user profile independently of the executable directory.
 
 ## Configure a program
 

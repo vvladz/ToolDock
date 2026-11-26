@@ -2,7 +2,7 @@
 
 This document preserves decisions for AI-assisted development. User-facing instructions and inline examples belong in [README.md](../../README.md).
 
-Current implementation: a .NET 10 Windows x64 CLI in `src/ToolDock`, with executable integration tests in `tests/ToolDock.Tests`. The requirements below remain the behavior contract; verification coverage and environment limitations are recorded at the end of this document.
+Current implementation: a .NET 11 Windows x64 CLI in `src/ToolDock`, with executable integration tests in `tests/ToolDock.Tests`. The requirements below remain the behavior contract; verification coverage and environment limitations are recorded at the end of this document.
 
 ## Scope and architecture
 
@@ -219,13 +219,13 @@ A command timeout is an error. A failed or cancelled new `start` must clean up o
 
 ## Build and verification
 
-Build with `dotnet build ToolDock.slnx -c Release`. Run the integration executable directly with `& './tests/ToolDock.Tests/bin/Release/net10.0-windows/win-x64/ToolDock.Tests.exe'`. Do not use `dotnet run` for detached-lifetime tests: it can introduce a restrictive `KILL_ON_JOB_CLOSE` Job. Tests use isolated directories under `artifacts/tests/` and do not modify the user's ToolDock configuration.
+Build with `dotnet build ToolDock.slnx -c Release`. Run the integration executable directly with `& './tests/ToolDock.Tests/bin/Release/net11.0-windows/win-x64/ToolDock.Tests.exe'`. Do not use `dotnet run` for detached-lifetime tests: it can introduce a restrictive `KILL_ON_JOB_CLOSE` Job. Tests use isolated directories under `artifacts/tests/` and do not modify the user's ToolDock configuration.
 
 The suite exercises argument quoting, environment and working-directory handling, both output streams, exit policies, case-insensitive duplicate protection, stop during retry, snapshot retention after configuration edits, state failures, file rotation and retention, startup acknowledgement, concurrent starts, cancelled startup ownership, and Job cleanup on retry and runner death.
 
 Background tests use the production detached launcher. They require a host permitting breakaway and no longer substitute a contained launcher when detachment fails. The suite creates its own explicit-breakaway and silent-breakaway Jobs, closes them, and verifies that the runner and its daemon descendants remain alive and can be stopped. It also rejects both an immediate restrictive Job and a restrictive ancestor above a breakaway Job, before launching a daemon.
 
-The suite also verifies that an explicit breakaway descendant survives stop without blocking output drain. The integration executable passed all 30 scenarios when run directly, including from Windows Terminal. Cross-session control, actual console closure/Ctrl+C, and the user's SSH launch mechanism still require validation in their target environments.
+The suite also verifies that an explicit breakaway descendant survives stop without blocking output drain. The integration executable passed all 37 scenarios on .NET 11 when run directly. Fixture marker readers allow concurrent append operations, and one-time PID markers are published only after their contents are complete. Cross-session control, actual console closure/Ctrl+C, and the user's SSH launch mechanism still require validation in their target environments.
 
 ## API references
 

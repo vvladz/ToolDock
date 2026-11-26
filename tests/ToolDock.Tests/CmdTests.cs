@@ -64,10 +64,10 @@ internal static class CmdTests
                 var paths = Config("versions", ["version-count", marker], "on-failure");
                 active.Add(paths);
                 Check(await Cli.StartAsync(paths) == "started");
-                await Until(() => File.Exists(marker) && File.ReadAllText(marker).Contains("one"));
+                await Until(() => File.Exists(marker) && FixtureFiles.ReadText(marker).Contains("one"));
                 File.WriteAllText(paths.ConfigurationFile, "invalid replacement");
                 File.WriteAllText(Path.Combine(root, "installed"), "two\n");
-                await Until(() => File.ReadAllText(marker).Contains("two"));
+                await Until(() => FixtureFiles.ReadText(marker).Contains("two"));
                 Check(await Cli.StopAsync(paths) == "stopped");
             });
             await test("CMD stop terminates the wrapper and ordinary descendants", async () =>
@@ -77,7 +77,7 @@ internal static class CmdTests
                 active.Add(paths);
                 Check(await Cli.StartAsync(paths) == "started");
                 await Until(() => File.Exists(marker));
-                using var descendant = Process.GetProcessById(int.Parse(File.ReadAllText(marker)));
+                using var descendant = Process.GetProcessById(int.Parse(FixtureFiles.ReadText(marker)));
                 Check(await Cli.StopAsync(paths) == "stopped");
                 await descendant.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
                 Check(!StateStore.Active(paths));
