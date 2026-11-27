@@ -10,6 +10,8 @@ if (args.FirstOrDefault() == "fixture") return await Fixture(args[1..]);
 var root = Path.Combine(Directory.GetCurrentDirectory(), "artifacts", "tests", Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(Path.Combine(root, "tools"));
 Environment.SetEnvironmentVariable("PATH", AppContext.BaseDirectory + ";" + Environment.GetEnvironmentVariable("PATH"));
+var restrictedJob = args is ["--restricted-job"];
+if (args.Length > 0 && !restrictedJob) return 2;
 var active = new List<Paths>();
 var passed = 0;
 try
@@ -47,8 +49,8 @@ try
         Check(await Cli.ExecuteAsync(["list", "--json"], root) == 2);
     });
     await SecretTests.RunAsync(root, Test);
-    await CmdTests.RunAsync(root, Test);
-    await StartAllTests.RunAsync(root, Test);
+    await CmdTests.RunAsync(root, Test, DetachedTest);
+    await StartAllTests.RunAsync(root, Test, DetachedTest);
     await Test("argument quoting, environment, working directory and output origins", async () =>
     {
         var result = Path.Combine(root, "arguments.json");
@@ -154,8 +156,8 @@ try
         Check(files.Any(f => Path.GetFileNameWithoutExtension(f).Contains('_')));
         return Task.CompletedTask;
     });
-    await JobTests.RunAsync(root, Test);
-    await Test("background acknowledgement, independent IDs and runner-death cleanup", async () =>
+    await JobTests.RunAsync(root, Test, DetachedTest);
+    await DetachedTest("background acknowledgement, independent IDs and runner-death cleanup", async () =>
     {
         var first = Config("background-one", ["tree", Path.Combine(root, "ordinary.pid")], "always");
         var second = Config("background-two", ["wait"], "never");
@@ -179,7 +181,7 @@ try
         using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
         await output.PumpAsync(logging.Logger, "stdout", cancel.Token).WaitAsync(TimeSpan.FromSeconds(2));
     });
-    await Test("concurrent starts create exactly one daemon", async () =>
+    await DetachedTest("concurrent starts create exactly one daemon", async () =>
     {
         var marker = Path.Combine(root, "single.txt");
         var paths = Config("concurrent", ["mark-wait", marker], "never");
@@ -190,7 +192,7 @@ try
         Check(FixtureFiles.ReadLines(marker).Length == 1);
         await Cli.StopAsync(paths);
     });
-    await Test("failed background startup reports configuration error and leaves no runner", async () =>
+    await DetachedTest("failed background startup reports configuration error and leaves no runner", async () =>
     {
         var paths = new Paths("bad-background", root);
         File.WriteAllText(paths.ConfigurationFile, "{}");
@@ -199,7 +201,7 @@ try
         Check(!StateStore.Active(paths));
         Check(StateStore.Read(paths)?.ExitCode == 1);
     });
-    await Test("cancelled startup only stops its own runner", async () =>
+    await DetachedTest("cancelled startup only stops its own runner", async () =>
     {
         var existing = Config("keep-running", ["wait"], "never");
         active.Add(existing);
@@ -222,7 +224,7 @@ try
         Check(StateStore.Active(existing));
         await Cli.StopAsync(existing);
     });
-    await Test("breakaway survives stop and inherited output has bounded drain", async () =>
+    await DetachedTest("breakaway survives stop and inherited output has bounded drain", async () =>
     {
         var marker = Path.Combine(root, "breakaway.pid");
         var paths = Config("breakaway", ["breakaway", marker], "never");
@@ -275,6 +277,12 @@ static async Task<(int Code, string Output)> List(string root)
 }
 Task<string> Start(Paths paths) => Cli.StartAsync(paths);
 string Logs(Paths paths) => string.Join('\n', Directory.GetFiles(paths.LogDirectory, "*.log").Select(File.ReadAllText));
+Task DetachedTest(string name, Func<Task> test)
+{
+    if (!restrictedJob) return Test(name, test);
+    Console.WriteLine($"SKIP {name} (requires a host that allows detachment)");
+    return Task.CompletedTask;
+}
 async Task Test(string name, Func<Task> test) { await test().WaitAsync(TimeSpan.FromSeconds(45)); passed++; Console.WriteLine($"PASS {name}"); }
 static void Check(bool condition, string? message = null) { if (!condition) throw new Exception(message ?? "Assertion failed."); }
 static async Task Until(Func<bool> predicate)

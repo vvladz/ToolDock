@@ -4,7 +4,7 @@ using Cli = ToolDock.Program;
 
 internal static class StartAllTests
 {
-    internal static async Task RunAsync(string parent, Func<string, Func<Task>, Task> test)
+    internal static async Task RunAsync(string parent, Func<string, Func<Task>, Task> test, Func<string, Func<Task>, Task> detachedTest)
     {
         await test("start --all distinguishes missing and empty configuration directories", async () =>
         {
@@ -15,7 +15,7 @@ internal static class StartAllTests
             Check(await Cli.ExecuteAsync(["start", "--all"], root) == 0);
             Check(await Cli.ExecuteAsync(["start", "--all", "extra"], root) == 2);
         });
-        await test("start --all isolates errors and repeated starts preserve running instances", async () =>
+        await detachedTest("start --all isolates errors and repeated starts preserve running instances", async () =>
         {
             var root = Path.Combine(parent, "all-mixed");
             Directory.CreateDirectory(Path.Combine(root, "tools"));

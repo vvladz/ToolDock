@@ -8,11 +8,11 @@ internal static class JobTests
 {
     private const uint KillOnClose = 0x2000, Breakaway = 0x800, SilentBreakaway = 0x1000;
 
-    internal static async Task RunAsync(string root, Func<string, Func<Task>, Task> test)
+    internal static async Task RunAsync(string root, Func<string, Func<Task>, Task> test, Func<string, Func<Task>, Task> detachedTest)
     {
-        await test("background runner and daemon survive closing the launcher's Job", () =>
+        await detachedTest("background runner and daemon survive closing the launcher's Job", () =>
             CheckLaunchAsync(root, "job-breakaway", KillOnClose | Breakaway, nested: false, expected: true));
-        await test("background runner survives closing a silent-breakaway Job", () =>
+        await detachedTest("background runner survives closing a silent-breakaway Job", () =>
             CheckLaunchAsync(root, "job-silent", KillOnClose | SilentBreakaway, nested: false, expected: true));
         await test("background start rejects a Job that forbids breakaway", () =>
             CheckLaunchAsync(root, "job-blocked", KillOnClose, nested: false, expected: false));

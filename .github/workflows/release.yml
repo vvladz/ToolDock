@@ -21,8 +21,8 @@ jobs:
           global-json-file: global.json
 
       - run: dotnet build ToolDock.slnx -c Release
-      - name: Test
-        run: .\tests\ToolDock.Tests\bin\Release\net11.0-windows\win-x64\ToolDock.Tests.exe
+      - name: Test in the hosted Windows Job
+        run: .\tests\ToolDock.Tests\bin\Release\net11.0-windows\win-x64\ToolDock.Tests.exe --restricted-job
 
       - name: Publish ToolDock.exe
         run: >-

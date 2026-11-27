@@ -5,7 +5,7 @@ using Cli = ToolDock.Program;
 
 internal static class CmdTests
 {
-    internal static async Task RunAsync(string parent, Func<string, Func<Task>, Task> test)
+    internal static async Task RunAsync(string parent, Func<string, Func<Task>, Task> test, Func<string, Func<Task>, Task> detachedTest)
     {
         var root = Path.Combine(parent, "cmd space & (test)");
         var bin = Path.Combine(root, "bin");
@@ -58,7 +58,7 @@ internal static class CmdTests
                 Check(StateStore.Status(paths).ExitCode == 1);
                 Check(Logs(paths).Contains("daemon exited code=7"));
             });
-            await test("CMD retry selects the installed version without reloading daemon JSON", async () =>
+            await detachedTest("CMD retry selects the installed version without reloading daemon JSON", async () =>
             {
                 var marker = Path.Combine(root, "versions.txt");
                 var paths = Config("versions", ["version-count", marker], "on-failure");
@@ -70,7 +70,7 @@ internal static class CmdTests
                 await Until(() => FixtureFiles.ReadText(marker).Contains("two"));
                 Check(await Cli.StopAsync(paths) == "stopped");
             });
-            await test("CMD stop terminates the wrapper and ordinary descendants", async () =>
+            await detachedTest("CMD stop terminates the wrapper and ordinary descendants", async () =>
             {
                 var marker = Path.Combine(root, "descendant.pid");
                 var paths = Config("tree", ["tree", marker]);

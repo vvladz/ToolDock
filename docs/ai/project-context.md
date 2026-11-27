@@ -221,6 +221,8 @@ A command timeout is an error. A failed or cancelled new `start` must clean up o
 
 Build with `dotnet build ToolDock.slnx -c Release`. Run the integration executable directly with `& './tests/ToolDock.Tests/bin/Release/net11.0-windows/win-x64/ToolDock.Tests.exe'`. Do not use `dotnet run` for detached-lifetime tests: it can introduce a restrictive `KILL_ON_JOB_CLOSE` Job. Tests use isolated directories under `artifacts/tests/` and do not modify the user's ToolDock configuration.
 
+The hosted Windows runner forbids background detachment. The release workflow passes `--restricted-job` to run the foreground scenarios and explicit rejection tests, and reports skipped detachment cases individually. Run the test executable without arguments in a permissive host for the complete suite.
+
 The suite exercises argument quoting, environment and working-directory handling, both output streams, exit policies, case-insensitive duplicate protection, stop during retry, snapshot retention after configuration edits, state failures, file rotation and retention, startup acknowledgement, concurrent starts, cancelled startup ownership, and Job cleanup on retry and runner death.
 
 Background tests use the production detached launcher. They require a host permitting breakaway and no longer substitute a contained launcher when detachment fails. The suite creates its own explicit-breakaway and silent-breakaway Jobs, closes them, and verifies that the runner and its daemon descendants remain alive and can be stopped. It also rejects both an immediate restrictive Job and a restrictive ancestor above a breakaway Job, before launching a daemon.
