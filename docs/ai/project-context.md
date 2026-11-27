@@ -10,7 +10,7 @@ ToolDock is a user-level daemon runner for modern Windows on AMD64/x64. One pers
 
 ToolDock and the installation manager are independent projects. Their shared interface is an executable name and arguments. ToolDock does not read installation manifests or manage installed versions, installation directories, `current` links, builds, updates, or cleanup of installed copies.
 
-External deployment arranges startup, including startup at sign-in. `start --all` selects all configured daemons; callers may also select individual names. A brief console window from an external launcher is acceptable. Scheduling, installation, updates and recovery of the runner itself remain external operations. Old Windows and other architectures are outside the target scope.
+External deployment arranges startup, including startup at sign-in. `start --all` selects configured daemons eligible on the current computer; callers may also select individual names. A brief console window from an external launcher is acceptable. Scheduling, installation, updates and recovery of the runner itself remain external operations. Old Windows and other architectures are outside the target scope.
 
 ## Identity and files
 
@@ -37,7 +37,7 @@ Configuration edits do not change a running instance or trigger reload. A new ru
 | Command | Behavior |
 | --- | --- |
 | `start <daemon>` | Create a detached runner, wait for its first process-start acknowledgement, and exit |
-| `start --all` | Sequentially start all configured daemons, reporting per-daemon results and aggregate failure |
+| `start --all` | Sequentially start eligible daemons, reporting per-daemon results and aggregate failure |
 | `run <daemon>` | Become the persistent runner in the invoking environment |
 | `stop <daemon>` | Signal the runner and wait for shutdown |
 | `status <daemon> [--json]` | Report runner activity and its last recorded result |
@@ -65,6 +65,8 @@ The runner records `0` for successful child completion or successful manual stop
 `start --all` enumerates the same top-level names as `list`, but a missing configuration directory is an error. An existing empty directory succeeds with an explicit message. Per-daemon configuration and startup failures do not stop the loop; any failure makes the final exit code `1`. Already running daemons succeed without restarting. Cancellation stops the loop, preserving earlier successful starts. Directory enumeration failures remain global errors.
 
 The detached runner and its managed group must survive the short command exiting and its console closing in supported environments. `start` waits for acknowledgement and exits; the persistent runner has another PID.
+
+For an inactive daemon, bulk start checks the optional `autostartOn` array against `Environment.MachineName` using ordinal case-insensitive equality before creating the runner or resolving its runtime dependencies. Omission selects every machine. An empty array selects none. Malformed lists are configuration errors. A host mismatch is a successful skip. An active runner still reports `already running` even after a config edit. Named start and foreground run bypass host selection.
 
 Create the background runner without a console, inherited standard streams, or unrelated inherited handles. Create the daemon without a console and with explicitly redirected streams. `CREATE_NO_WINDOW` provides console-free creation for console executables.
 
@@ -227,7 +229,7 @@ The suite exercises argument quoting, environment and working-directory handling
 
 Background tests use the production detached launcher. They require a host permitting breakaway and no longer substitute a contained launcher when detachment fails. The suite creates its own explicit-breakaway and silent-breakaway Jobs, closes them, and verifies that the runner and its daemon descendants remain alive and can be stopped. It also rejects both an immediate restrictive Job and a restrictive ancestor above a breakaway Job, before launching a daemon.
 
-The suite also verifies that an explicit breakaway descendant survives stop without blocking output drain. The integration executable passed all 37 scenarios on .NET 11 when run directly. Fixture marker readers allow concurrent append operations, and one-time PID markers are published only after their contents are complete. Cross-session control, actual console closure/Ctrl+C, and the user's SSH launch mechanism still require validation in their target environments.
+The suite also verifies that an explicit breakaway descendant survives stop without blocking output drain. Host selection tests cover case-insensitive matches, omissions, exclusions, invalid lists and explicit starts. Fixture marker readers allow concurrent append operations, and one-time PID markers are published only after their contents are complete. Cross-session control, actual console closure/Ctrl+C, and the user's SSH launch mechanism still require validation in their target environments.
 
 ## API references
 

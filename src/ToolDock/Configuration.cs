@@ -70,6 +70,28 @@ internal sealed record DaemonConfiguration
     public Dictionary<string, JsonElement> Environment { get; init; } = [];
     public string Restart { get; init; } = "on-failure";
     public double RestartDelaySeconds { get; init; } = 5;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? AutostartOn
+    {
+        get;
+        init
+        {
+            if (value is null || value.Any(string.IsNullOrWhiteSpace))
+                throw new InvalidDataException("autostartOn must be an array of nonempty computer names.");
+            field = value;
+        }
+    }
+
+    internal static DaemonConfiguration Read(Paths paths)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<DaemonConfiguration>(File.ReadAllText(paths.ConfigurationFile), Settings.Json)
+                ?? throw new InvalidDataException("Configuration must be an object.");
+        }
+        catch (JsonException) { throw new InvalidDataException("Invalid daemon configuration JSON or missing required properties."); }
+    }
 }
 
 internal sealed record LaunchSnapshot(string Executable, string[] Arguments, string Directory,
@@ -77,13 +99,7 @@ internal sealed record LaunchSnapshot(string Executable, string[] Arguments, str
 {
     internal static LaunchSnapshot Load(Paths paths)
     {
-        DaemonConfiguration config;
-        try
-        {
-            config = JsonSerializer.Deserialize<DaemonConfiguration>(File.ReadAllText(paths.ConfigurationFile), Settings.Json)
-                ?? throw new InvalidDataException("Configuration must be an object.");
-        }
-        catch (JsonException) { throw new InvalidDataException("Invalid daemon configuration JSON or missing required properties."); }
+        var config = DaemonConfiguration.Read(paths);
         if (string.IsNullOrWhiteSpace(config.Executable) || config.Executable.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
             !(config.Executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
               config.Executable.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)))

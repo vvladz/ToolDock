@@ -53,6 +53,7 @@ For example, create `work-tunnel.json`:
 | `environment` | Environment variables or secret references for this program | `{}`; Windows and global values are inherited |
 | `restart` | `never`, `on-failure`, or `always` | `on-failure` |
 | `restartDelaySeconds` | A positive delay between attempts, in seconds | `5` |
+| `autostartOn` | Windows computer names eligible for `start --all` (case-insensitive) | All computers |
 
 Relative working directories are resolved from the configuration file's directory. In this example, `./data/work` means `$HOME/.config/ToolDock/tools/data/work`. Create that directory before starting the daemon. The program interprets `work.json` relative to its own working directory.
 
@@ -271,13 +272,24 @@ A successful `status` command returns `0` even when the reported status is `fail
 
 ## Start at sign-in
 
-Configure Task Scheduler or your preferred sign-in mechanism to start all configured daemons:
+Configure Task Scheduler or your preferred sign-in mechanism to start the daemons selected for this computer:
 
 ```powershell
 ToolDock.exe start --all
 ```
 
 Each daemon needs its own configuration file. Daemons are started sequentially in filename order. Already running daemons succeed without restarting. A failed daemon does not prevent the remaining daemons from starting. Results are printed per daemon, followed by totals; exit code is `1` if any daemon failed and `0` otherwise. Cancellation stops further starts and leaves previously started daemons running.
+
+When sharing a daemon configuration between computers, set `autostartOn` to the names of machines that should start it. For example:
+
+```json
+{
+  "executable": "FarShell.Broker.cmd",
+  "autostartOn": ["DESKTOP-MAIN"]
+}
+```
+
+Use `[Environment]::MachineName` in PowerShell to find the name. Omit `autostartOn` to allow every computer, or use `[]` for manual startup only. A stopped daemon excluded on this computer is reported as `skipped` and counts as neither started nor failed. Explicit `start <daemon>` and `run <daemon>` work on any computer.
 
 A missing `tools` directory is an error for `start --all`. An existing empty directory succeeds with `No daemons configured.` The `list` command continues to allow a missing directory. ToolDock handles child program restarts; restarting a failed ToolDock runner is the responsibility of the external launcher.
 

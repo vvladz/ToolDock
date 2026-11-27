@@ -71,27 +71,35 @@ internal static class Program
     {
         var daemons = Paths.ListDaemons(root, requireDirectory: true);
         var succeeded = 0;
+        var skipped = 0;
         foreach (var daemon in daemons)
         {
             cancellation.ThrowIfCancellationRequested();
             try
             {
-                var result = await StartAsync(new Paths(daemon, root), cancellation);
+                var result = await StartAsync(new Paths(daemon, root), cancellation, checkAutostartOn: true);
                 Console.WriteLine($"{daemon}: {result}");
-                succeeded++;
+                if (result == "skipped") skipped++;
+                else succeeded++;
             }
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
             catch (Exception error) { Console.Error.WriteLine($"{daemon}: {error.Message}"); }
         }
         if (daemons.Length == 0) Console.WriteLine("No daemons configured.");
-        Console.WriteLine($"Daemons: {succeeded} succeeded, {daemons.Length - succeeded} failed.");
-        return succeeded == daemons.Length ? 0 : 1;
+        var failed = daemons.Length - succeeded - skipped;
+        var skippedSummary = skipped == 0 ? "" : $"{skipped} skipped, ";
+        Console.WriteLine($"Daemons: {succeeded} succeeded, {skippedSummary}{failed} failed.");
+        return failed == 0 ? 0 : 1;
     }
 
     internal static async Task<string> StartAsync(Paths paths, CancellationToken cancellation = default,
-        Func<string, string[], ChildProcess>? launch = null)
+        Func<string, string[], ChildProcess>? launch = null, bool checkAutostartOn = false)
     {
         if (StateStore.Active(paths)) return "already running";
+        if (checkAutostartOn && DaemonConfiguration.Read(paths).AutostartOn is { } computers &&
+            !computers.Contains(Environment.MachineName, StringComparer.OrdinalIgnoreCase))
+            return "skipped";
+
         var runId = Guid.NewGuid();
         using var stop = Native.CreateStopEvent(paths.EventName(runId));
         using var pipe = new NamedPipeServerStream("ToolDock.start." + runId.ToString("N"), PipeDirection.In,
