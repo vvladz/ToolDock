@@ -4,6 +4,10 @@ ToolDock runs background programs under your Windows user account. Give each pro
 
 Target platform: modern Windows on AMD64/x64, without administrator privileges.
 
+## Install
+
+Download [ToolDock.exe from the latest release](https://github.com/vvladz/ToolDock/releases/latest/download/ToolDock.exe). The single-file Windows x64 executable requires the .NET 11 runtime. Run `ToolDock.exe --version` to check the installed version.
+
 ## Build and run
 
 Install the .NET 11 SDK on Windows, then build from the repository root:

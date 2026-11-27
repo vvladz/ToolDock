@@ -1,0 +1,45 @@
+name: Release ToolDock
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  VERSION: "1.0.${{ github.run_number }}"
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - run: dotnet build ToolDock.slnx -c Release
+      - name: Test
+        run: .\tests\ToolDock.Tests\bin\Release\net11.0-windows\win-x64\ToolDock.Tests.exe
+
+      - name: Publish ToolDock.exe
+        run: >-
+          dotnet publish src/ToolDock/ToolDock.csproj
+          -c Release -r win-x64 --self-contained false
+          -p:PublishSingleFile=true -p:DebugType=embedded
+          -p:Version=${{ env.VERSION }}
+          -p:IncludeSourceRevisionInInformationalVersion=false
+          -o publish
+
+      - name: Smoke test the release executable
+        run: ./publish/ToolDock.exe --help
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          files: publish/ToolDock.exe
+          fail_on_unmatched_files: true
